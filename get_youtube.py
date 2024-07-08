@@ -247,6 +247,10 @@ def main():
 
     if args_json["mode"] is None:
         args_json["mode"] = 'kp' # default get keypoints
+    elif args_json["mode"] == 'a':
+        args_json["mode"] = 'kpa' # small shortcut to avoid typing kp everytime we want spanish and audio
+    elif args_json["mode"] == 'e':
+        args_json["mode"] = 'kpe' # small shortcut to avoid typing kp everytime we want spanish and audio
     elif args_json["mode"] == 'ea':
         args_json["mode"] = 'kpea' # small shortcut to avoid typing kp everytime we want spanish and audio
 
