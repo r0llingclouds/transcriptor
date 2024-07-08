@@ -123,14 +123,19 @@ def load_and_trim_text(text, max_tokens = 27000):
     
     return trimmed_text
 
-def summarize(transcription):
+def summarize(transcription, language="en"):
+    if language.lower() == "es":
+        system_content = "Eres una IA altamente capacitada en comprensión y resumen de textos. Voy a darte un texto. Resúmelo, extrayendo la información más importante. Intenta retener los puntos más importantes. Devuelve un resumen del texto."
+    else:  # default to English
+        system_content = "You are a highly skilled AI trained in language comprehension and summarization. I'm going to give you a text. Summarize it, extracting the most important information. Aim to retain the most important points. Return a summary of the text."
+
     response = client.chat.completions.create(
         model="gpt-4o",
         temperature=0.5,
         messages=[
             {
                 "role": "system",
-                "content": "You are a highly skilled AI trained in language comprehension and summarization. I'm going to give you a text. Summarize it, extracting the most important information. Aim to retain the most important points. Return a summary of the text."
+                "content": system_content
             },
             {
                 "role": "user",
@@ -140,14 +145,19 @@ def summarize(transcription):
     )
     return response.choices[0].message.content
 
-def summarize_keypoints(transcription):
+def summarize_keypoints(transcription, language="en"):
+    if language.lower() == "es":
+        system_content = "Eres una IA altamente capacitada en comprensión y resumen de textos. Lee el siguiente texto y extrae los puntos clave del mismo. Intenta retener los puntos más importantes y devuelve estos puntos clave en una lista. Puedes dar un breve resumen antes de la lista."
+    else:  # default to English
+        system_content = "You are a highly skilled AI trained in language comprehension and summarization. Read the following text and extract the key points of it. Aim to retain the most important points and return these key points in a list. You can give a brief abstract before the list."
+
     response = client.chat.completions.create(
         model="gpt-4o",
         temperature=0.5,
         messages=[
             {
                 "role": "system",
-                "content": "You are a highly skilled AI trained in language comprehension and summarization. Read the following text and extract the key points of it. Aim to retain the most important points and return these key points in a list. You can give a brief abstract before the list."
+                "content": system_content
             },
             {
                 "role": "user",
@@ -157,14 +167,21 @@ def summarize_keypoints(transcription):
     )
     return response.choices[0].message.content
 
-def qna(context, question):
-
-    # Define the messages for the chat completion
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant. Answer the following question based on the given context."},
-        {"role": "user", "content": f"Context: {context}"},
-        {"role": "user", "content": f"Question: {question}"}
-    ]
+def qna(context, question, language="en"):
+    if language.lower() == "es":
+        system_content = "Eres un asistente útil. Responde la siguiente pregunta basada en el contexto dado."
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": f"Contexto: {context}"},
+            {"role": "user", "content": f"Pregunta: {question}"}
+        ]
+    else:  # default to English
+        system_content = "You are a helpful assistant. Answer the following question based on the given context."
+        messages = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": f"Context: {context}"},
+            {"role": "user", "content": f"Question: {question}"}
+        ]
 
     # Call the OpenAI API with the GPT-4 model
     response = client.chat.completions.create(
@@ -179,22 +196,54 @@ def qna(context, question):
     return response.choices[0].message.content
 
 
+def extract_arguments(text):
+    pattern = r'(https://www\.youtube\.com/watch\?v=[^&\s]+)(&[^&\s]*)*'
+    clean_text = re.sub(pattern, r'\1', text)
+
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        temperature=0.5,
+        messages=[
+            {
+                "role": "system",
+                "content": f"You are a helpful assistant. Extract the mode, YouTube link, start time, end time, and question from the following text: \"{clean_text}\".\n\nFormat the output as a JSON object with the keys 'mode', 'youtube_link', 'start_time', 'end_time', and 'question'. Mode will always come first as one ore more characters, in case it is present. If a key is not present, set its value to None. For the questions, if present, return them as a list of strings. If there are no questions, return an empty list."
+            }
+        ],
+        response_format={ "type": "json_object" }
+    )
+
+    response_text = response.choices[0].message.content.strip()
+    response_text = response_text.replace('null', 'None')
+
+    response_text = eval(response_text)
+    return response_text
+
 def main():
     parser = argparse.ArgumentParser(description="Transcribe YouTube videos or segments")
-    parser.add_argument("url", help="YouTube video URL")
-    parser.add_argument("start_time", help="start time (e.g., 2h34m45s)")
-    parser.add_argument("end_time", help="end time (e.g., 2h34m45s)")
-    parser.add_argument("question", nargs='?', help="question to answer")
-
+    parser.add_argument("data", help="mode link start end questions")
     args = parser.parse_args()
+    args_json = extract_arguments(args.data)
 
     path = "/Users/tirsolopezausens/Downloads"
+
+    if args_json["mode"] is None:
+        args_json["mode"] = 'kp' # default get keypoints
+
     print(f"* downloading")
-    url = args.url.split("&")[0]
+    url = args_json["youtube_link"]
     video_name = download_youtube_video(url, path)
 
     print(f"* extracting segment")
-    segment = extract_audio_segment(video_name, path, args.start_time, args.end_time)
+    if args_json["start_time"] is None:
+        args_json["start_time"] = "0s"
+    if args_json["end_time"] is None:
+        audio = AudioSegment.from_file(os.path.join(path, video_name))
+        video_length = len(audio) / 1000
+        args_json["end_time"] = f"{int(video_length // 3600)}h{int((video_length % 3600) // 60)}m{int(video_length % 60)}s"
+
+    print(f"* data {args_json}")
+
+    segment = extract_audio_segment(video_name, path, args_json["start_time"], args_json["end_time"])
 
     print(f"* transcribing")
     transcript = get_transcription(segment, path)
@@ -204,25 +253,55 @@ def main():
     trimmed_transcript = load_and_trim_text(transcript, 26000)
 
     # operations
-    if args.question:
-        print("* question answering")
-        response = qna(trimmed_transcript, args.question)
-        print(args.question)
-        print()
-        print(response)
-        with open(f"{segment[:-4]}_qna_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt", "w") as f:
-            f.write(args.question + "\n\n")
-            f.write(response)
+    qna_dict = dict()
+    if len(args_json["question"]) > 0:
+        for question in args_json["question"]:
+            print('--------------------------------------')
+            print("* question answering")
+            if args_json["mode"] == 'qe':
+                response = qna(trimmed_transcript, question, language="es")
+            else:
+                response = qna(trimmed_transcript, question)
+            qna_dict[question] = response
+            print(question)
+            print(response)
+            print()
+        with open(os.path.join(path, f"{segment[:-4]}_qna_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt"), "w") as f:
+            for question, response in qna_dict.items():
+                f.write(f"Question: {question}\nAnswer: {response}\n\n\n")
     else:
-        print("* summarizing")
-        response = summarize(trimmed_transcript)
-        with open(f"{segment[:-4]}_summary.txt", "w") as f:
-            f.write(response)
-        print("* key points")
-        response = summarize_keypoints(trimmed_transcript)
-        print(response)
-        with open(f"{segment[:-4]}_keypoints.txt", "w") as f:
-            f.write(response)
+        if args_json["mode"] == 'kp':
+            print('--------------------------------------')
+            print("* key points")
+            response = summarize_keypoints(trimmed_transcript)
+            print(response)
+            with open(os.path.join(path, f"{segment[:-4]}_keypoints.txt"), "w") as f:
+                f.write(response)
+        elif args_json["mode"] == 's':
+            print('--------------------------------------')
+            print("* summarizing")
+            response = summarize(trimmed_transcript)
+            print(response)
+            with open(os.path.join(path, f"{segment[:-4]}_summary.txt"), "w") as f:
+                f.write(response)
+        elif args_json["mode"] == 'kpe':
+            print('--------------------------------------')
+            print("* key points")
+            response = summarize_keypoints(trimmed_transcript, language="es")
+            print(response)
+            with open(os.path.join(path, f"{segment[:-4]}_keypoints.txt"), "w") as f:
+                f.write(response)
+        elif args_json["mode"] == 'se':
+            print('--------------------------------------')
+            print("* summarizing")
+            response = summarize(trimmed_transcript, language="es")
+            print(response)
+            with open(os.path.join(path, f"{segment[:-4]}_summary.txt"), "w") as f:
+                f.write(response)
+        elif args_json["mode"] == 'tr': # just get the transcript
+            pass
+        else:
+            raise ValueError(f"Invalid mode: {args_json['mode']}")
 
     # clean up
     os.remove(os.path.join(path, video_name))
