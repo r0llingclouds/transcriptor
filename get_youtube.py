@@ -195,6 +195,24 @@ def qna(context, question, language="en"):
     # Extract the answer from the API response
     return response.choices[0].message.content
 
+def read_aloud(filename, language="en"):
+    # get the content of the file. it is a txt file
+    with open(filename, "r") as f:
+        text = f.read()
+
+    output_file = filename[:-4] + "_speech.mp3"
+
+    with client.audio.speech.with_streaming_response.create(
+        model="tts-1-hd",
+        voice="nova",
+        input=text,
+    ) as response:
+        response.stream_to_file(output_file)
+
+    # play the audio file
+    import os
+    os.system(f'ffplay -nodisp -autoexit "{output_file}"')
+
 
 def extract_arguments(text):
     pattern = r'(https://www\.youtube\.com/watch\?v=[^&\s]+)(&[^&\s]*)*'
@@ -229,6 +247,8 @@ def main():
 
     if args_json["mode"] is None:
         args_json["mode"] = 'kp' # default get keypoints
+    elif args_json["mode"] == 'ea':
+        args_json["mode"] = 'kpea' # small shortcut to avoid typing kp everytime we want spanish and audio
 
     print(f"* downloading")
     url = args_json["youtube_link"]
@@ -243,6 +263,11 @@ def main():
         args_json["end_time"] = f"{int(video_length // 3600)}h{int((video_length % 3600) // 60)}m{int(video_length % 60)}s"
 
     print(f"* data {args_json}")
+
+    if 'a' in args_json["mode"]:
+        # remove the a and set audio flag to true
+        args_json["mode"] = args_json["mode"].replace('a', '')
+        audio = True
 
     segment = extract_audio_segment(video_name, path, args_json["start_time"], args_json["end_time"])
 
@@ -259,7 +284,7 @@ def main():
         for question in args_json["question"]:
             print('--------------------------------------')
             print("* question answering")
-            if args_json["mode"] == 'qe':
+            if 'e' in args_json["mode"]:
                 response = qna(trimmed_transcript, question, language="es")
             else:
                 response = qna(trimmed_transcript, question)
@@ -268,9 +293,19 @@ def main():
             print()
             print(response)
             print()
-        with open(os.path.join(path, f"{segment[:-4]}_qna_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt"), "w") as f:
+        filename_out = os.path.join(path, f"{segment[:-4]}_qna_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt")
+        with open(os.path.join(path, filename_out), "w") as f:
             for question, response in qna_dict.items():
-                f.write(f"Question: {question}\nAnswer: {response}\n\n\n")
+                if 'e' in args_json["mode"]:
+                    f.write(f"Pregunta: {question}\n{response}\n\n\n")
+                else:
+                    f.write(f"Question: {question}\n{response}\n\n\n")
+        if audio:
+            print('--------------------------------------')
+            print("* reading aloud")
+            read_aloud(os.path.join(path, filename_out))
+
+
     else:
         if args_json["mode"] == 'kp':
             print('--------------------------------------')
@@ -279,6 +314,10 @@ def main():
             print(response)
             with open(os.path.join(path, f"{segment[:-4]}_keypoints.txt"), "w") as f:
                 f.write(response)
+            if audio:
+                print('--------------------------------------')
+                print("* reading aloud")
+                read_aloud(os.path.join(path, f"{segment[:-4]}_keypoints.txt"))
         elif args_json["mode"] == 's':
             print('--------------------------------------')
             print("* summarizing")
@@ -286,6 +325,10 @@ def main():
             print(response)
             with open(os.path.join(path, f"{segment[:-4]}_summary.txt"), "w") as f:
                 f.write(response)
+            if audio:
+                print('--------------------------------------')
+                print("* reading aloud")
+                read_aloud(os.path.join(path, f"{segment[:-4]}_summary.txt"))
         elif args_json["mode"] == 'kpe':
             print('--------------------------------------')
             print("* key points")
@@ -293,6 +336,10 @@ def main():
             print(response)
             with open(os.path.join(path, f"{segment[:-4]}_keypoints.txt"), "w") as f:
                 f.write(response)
+            if audio:
+                print('--------------------------------------')
+                print("* reading aloud")
+                read_aloud(os.path.join(path, f"{segment[:-4]}_keypoints.txt"))
         elif args_json["mode"] == 'se':
             print('--------------------------------------')
             print("* summarizing")
@@ -300,6 +347,10 @@ def main():
             print(response)
             with open(os.path.join(path, f"{segment[:-4]}_summary.txt"), "w") as f:
                 f.write(response)
+            if audio:
+                print('--------------------------------------')
+                print("* reading aloud")
+                read_aloud(os.path.join(path, f"{segment[:-4]}_summary.txt"))
         elif args_json["mode"] == 'tr': # just get the transcript
             pass
         else:
