@@ -7,8 +7,9 @@ from pydub import AudioSegment
 from openai import OpenAI
 from pydub.utils import make_chunks
 import tiktoken
+from dotenv import load_dotenv
 
-def download_youtube_video(url, output_path="/Users/tirsolopezausens/Downloads"):
+def download_youtube_video(url, output_path=os.getenv("OUTPUT_PATH", "~/Downloads")):
     yt = YouTube(url)
     stream = yt.streams.filter(only_audio=True).first()
 
@@ -187,7 +188,6 @@ def qna(context, question, language="en"):
     response = client.chat.completions.create(
         model="gpt-4o",  # Specify the GPT-4 model
         messages=messages,
-        max_tokens=300,  # Adjust as needed for the expected length of the answer
         temperature=0.3,  # Adjust the creativity level of the model
         n=1  # Number of responses to generate
     )
@@ -219,12 +219,13 @@ def extract_arguments(text):
     return response_text
 
 def main():
+    load_dotenv()
     parser = argparse.ArgumentParser(description="Transcribe YouTube videos or segments")
     parser.add_argument("data", help="mode link start end questions")
     args = parser.parse_args()
     args_json = extract_arguments(args.data)
 
-    path = "/Users/tirsolopezausens/Downloads"
+    path = os.getenv("OUTPUT_PATH", "~/Downloads")
 
     if args_json["mode"] is None:
         args_json["mode"] = 'kp' # default get keypoints
@@ -264,6 +265,7 @@ def main():
                 response = qna(trimmed_transcript, question)
             qna_dict[question] = response
             print(question)
+            print()
             print(response)
             print()
         with open(os.path.join(path, f"{segment[:-4]}_qna_{datetime.datetime.now().strftime("%Y%m%d%H%M%S")}.txt"), "w") as f:
