@@ -72,6 +72,9 @@ def get_transcription(file, path, max_filesize_mb=24):
     else:
         chunk_names = split_audio(file, path)
         transcripts = [get_chunk_transcription(os.path.join(path, chunk)) for chunk in chunk_names]
+        # remove chunk files
+        for chunk in chunk_names:
+            os.remove(os.path.join(path, chunk))
         return " ".join(transcripts)
 
 # Function to load and trim text based on token limit
