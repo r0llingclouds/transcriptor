@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 client = OpenAI()
 
 # Function to download YouTube video audio
-def download_youtube_video(url, output_path=os.getenv("OUTPUT_PATH", "~/Downloads")):
+def  download_youtube_video(url, output_path=os.getenv("OUTPUT_PATH", "~/Downloads")):
     yt = YouTube(url)
     stream = yt.streams.filter(only_audio=True).first()
     video_name = f"{stream.title}_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}.mp4"
@@ -152,7 +152,7 @@ def read_aloud(filename, language="en"):
 
 # Function to extract arguments from input text
 def extract_arguments(text):
-    pattern = r'(https://www\.youtube\.com/watch\?v=[^&\s]+)(&[^&\s]*)*'
+    pattern = r'(https://www\.youtube\.com/watch\?v=[^&\s]+|[\w\-/]+/[\w\-]+\.[a-zA-Z0-9]+)(&[^&\s]*)*'
     clean_text = re.sub(pattern, r'\1', text)
     response = client.chat.completions.create(
         model="gpt-4o",
@@ -160,19 +160,28 @@ def extract_arguments(text):
         messages=[
             {
                 "role": "system",
-                "content": f"You are a helpful assistant. Extract the mode, YouTube link, start time, end time, and question from the following text: \"{clean_text}\".\n\nFormat the output as a JSON object with the keys 'mode', 'youtube_link', 'start_time', 'end_time', and 'question'. Mode will always come first as one ore more characters, in case it is present. If a key is not present, set its value to None. For the questions, if present, return them as a list of strings. If there are no questions, return an empty list."
+                "content": f"You are a helpful assistant. Extract the mode, YouTube link or local file path, start time, end time, and question from the following text: \"{clean_text}\".\n\nFormat the output as a JSON object with the keys 'mode', 'youtube_link_or_path', 'start_time', 'end_time', and 'question'. Mode will always come first as one or more characters, but sometimes it will not be present so the first argument might be the youtube link (or path). If a key is not present, set its value to None. For the questions, if present, return them as a list of strings. If there are no questions, return an empty list."
             }
         ],
         response_format={ "type": "json_object" }
     )
+    print(response.choices[0].message.content)
     response_text = response.choices[0].message.content.strip().replace('null', 'None')
     return eval(response_text)
+
+# Function to handle local video files
+def process_local_video(file_path, output_path):
+    video_name = os.path.basename(file_path)
+    audio = AudioSegment.from_file(file_path)
+    output_audio_path = os.path.join(output_path, f"{os.path.splitext(video_name)[0]}.mp3")
+    audio.export(output_audio_path, format="mp3")
+    return output_audio_path
 
 # Main function
 def main():
     load_dotenv()
-    parser = argparse.ArgumentParser(description="Transcribe YouTube videos or segments")
-    parser.add_argument("data", help="mode link start end questions")
+    parser = argparse.ArgumentParser(description="Transcribe YouTube or local videos or segments")
+    parser.add_argument("data", help="mode link_or_path start end questions")
     args = parser.parse_args()
     args_json = extract_arguments(args.data)
     path = os.getenv("OUTPUT_PATH", "~/Downloads")
@@ -184,9 +193,13 @@ def main():
     audio = 'a' in args_json["mode"]
     args_json["mode"] = args_json["mode"].replace('a', '')
 
-    print(f"* downloading")
-    url = args_json["youtube_link"]
-    video_name = download_youtube_video(url, path)
+    print(f"* downloading or processing local video")
+    url_or_path = args_json["youtube_link_or_path"]
+    
+    if re.match(r'^https?://(www\.)?youtube\.com/watch\?v=[\w-]+', url_or_path):
+        video_name = download_youtube_video(url_or_path, path)
+    else:
+        video_name = process_local_video(url_or_path, path)
 
     print(f"* extracting segment")
     args_json["start_time"] = '0s' if args_json["start_time"] is None else args_json["start_time"]
@@ -245,8 +258,8 @@ def main():
             read_aloud(os.path.join(path, output_filename))
 
     # clean up
-    os.remove(os.path.join(path, video_name))
-    os.remove(os.path.join(path, segment))
+    # os.remove(os.path.join(path, video_name))
+    # os.remove(os.path.join(path, segment))
 
 if __name__ == "__main__":
     main()
