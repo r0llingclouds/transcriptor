@@ -467,6 +467,7 @@ Transcript:
         try:
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(merged_data, f, indent=2, ensure_ascii=False)
+            console.print(f"[dim]✓ QA history saved ({len(self.qa_history)} exchanges)[/dim]")
         except Exception as e:
             console.print(f"[yellow]Warning: Could not save session: {e}[/yellow]")
     
@@ -714,11 +715,25 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 sanitized_title = sanitize_filename(video_info['title'])
                 cache_file = f"transcripts/{video_id}_{sanitized_title}.json"
                 
-                # Save combined data
+                # Check if file already exists (e.g., from QA session) and merge
+                existing_data = {}
+                if os.path.exists(cache_file):
+                    try:
+                        with open(cache_file, 'r', encoding='utf-8') as f:
+                            existing_data = json.load(f)
+                    except Exception:
+                        pass  # If we can't read it, we'll overwrite
+                
+                # Merge new transcript data with existing QA data
                 cached_data = {
                     'video_info': video_info,
-                    'transcript': transcript
+                    'transcript': transcript,
+                    'qa_history': existing_data.get('qa_history', []),
+                    'last_updated': existing_data.get('last_updated')
                 }
+                
+                # Clean up None values
+                cached_data = {k: v for k, v in cached_data.items() if v is not None and (k != 'qa_history' or v)}
                 
                 try:
                     with open(cache_file, 'w', encoding='utf-8') as f:
