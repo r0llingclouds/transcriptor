@@ -1,0 +1,22 @@
+{
+  "video_info": {
+    "title": "$200/month Cursor Ultra or Claude Code Max?",
+    "duration": 3336,
+    "uploader": "Ray Fernando"
+  },
+  "qa_history": [
+    {
+      "question": "who is the guest?",
+      "answer": "The guest in the video is Robin, who has about 20 years of experience in the coding industry. He is on a mission to teach people, especially those who haven't coded before, how to use AI systems for coding and app development."
+    },
+    {
+      "question": "does he like claude code",
+      "answer": "Yes, Robin expresses a positive view of Claude Code. He mentions that he uses it frequently and appreciates its capabilities, particularly for maximum output and handling agentic tasks effectively. He acknowledges that while he also uses Cursor, he finds Claude Code to be very good for certain tasks."
+    },
+    {
+      "question": "what was my last question",
+      "answer": "Your last question was, \"does he like claude code?\""
+    }
+  ],
+  "last_updated": "2025-09-05T21:45:55.973728"
+}

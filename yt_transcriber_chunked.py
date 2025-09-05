@@ -288,6 +288,7 @@ class QAHandler:
     def __init__(self, api_key: str = None, provider: str = 'openai'):
         self.provider = provider
         self.qa_history = []
+        self.sessions_dir = "qa_sessions"
         
         if provider == 'openai':
             self.api_key = api_key or os.getenv('OPENAI_API_KEY')
@@ -363,8 +364,70 @@ Transcript:
         )
         return response.content[0].text
     
-    def interactive_session(self, transcript: str, video_info: dict, output_file: Optional[str] = None):
+    def get_session_filename(self, video_id: str) -> str:
+        """Get the standard session filename for a video ID"""
+        return os.path.join(self.sessions_dir, f"{video_id}_qa.json")
+    
+    def load_session(self, video_id: str) -> bool:
+        """Load existing Q&A session if it exists"""
+        import json
+        session_file = self.get_session_filename(video_id)
+        
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    self.qa_history = data.get('qa_history', [])
+                    return True
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not load session: {e}[/yellow]")
+        return False
+    
+    def save_session_json(self, video_id: str, video_info: dict):
+        """Save Q&A session in JSON format for persistence"""
+        import json
+        from datetime import datetime
+        
+        if not self.qa_history:
+            return
+        
+        os.makedirs(self.sessions_dir, exist_ok=True)
+        session_file = self.get_session_filename(video_id)
+        
+        data = {
+            'video_info': video_info,
+            'qa_history': self.qa_history,
+            'last_updated': datetime.now().isoformat()
+        }
+        
+        try:
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not save session: {e}[/yellow]")
+    
+    def interactive_session(self, transcript: str, video_info: dict, video_id: str, output_file: Optional[str] = None):
         """Run an interactive Q&A session"""
+        
+        # Check for existing session
+        if self.load_session(video_id):
+            console.print(f"[green]✓ Found existing Q&A session with {len(self.qa_history)} previous exchanges[/green]")
+            continue_session = Prompt.ask("Continue previous session?", choices=["yes", "no"], default="yes")
+            if continue_session == "no":
+                self.qa_history = []
+                console.print("[yellow]Starting new session...[/yellow]")
+            else:
+                console.print("[green]Continuing previous session...[/green]")
+                # Show last Q&A to refresh memory
+                if self.qa_history:
+                    last_qa = self.qa_history[-1]
+                    console.print(Panel.fit(
+                        f"[dim]Last question:[/dim] {last_qa['question']}\n"
+                        f"[dim]Last answer:[/dim] {last_qa['answer'][:200]}...",
+                        title="Previous Context",
+                        border_style="dim"
+                    ))
+        
         console.print(Panel.fit(
             f"[bold green]Interactive Q&A Session[/bold green]\n"
             f"Video: {video_info.get('title', 'Unknown')}\n"
@@ -383,11 +446,15 @@ Transcript:
                 question = Prompt.ask("\n[bold cyan]Your question[/bold cyan]")
                 
                 if question.lower() in ['/quit', '/exit']:
+                    # Always save JSON session
+                    self.save_session_json(video_id, video_info)
+                    # Optionally save markdown file
                     if output_file or self.qa_history:
-                        save = Prompt.ask("Save Q&A history?", choices=["yes", "no"], default="yes")
+                        save = Prompt.ask("Save Q&A history to markdown?", choices=["yes", "no"], default="yes")
                         if save == "yes":
                             self.save_session(video_info, output_file)
                     console.print("[yellow]Ending Q&A session...[/yellow]")
+                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
                     break
                 
                 elif question.lower() == '/save':
@@ -419,6 +486,9 @@ Transcript:
                 # Store in history
                 self.qa_history.append({"question": question, "answer": answer})
                 
+                # Auto-save session after each Q&A
+                self.save_session_json(video_id, video_info)
+                
                 # Display answer
                 console.print(Panel(
                     Markdown(answer),
@@ -428,6 +498,7 @@ Transcript:
                 
             except KeyboardInterrupt:
                 console.print("\n[yellow]Session interrupted. Saving and exiting...[/yellow]")
+                self.save_session_json(video_id, video_info)
                 if output_file or self.qa_history:
                     self.save_session(video_info, output_file)
                 break
@@ -549,8 +620,8 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
                 progress.stop()  # Stop the progress display
                 
                 qa_handler = QAHandler(api_key=api_key, provider=provider)
-                # Use the output parameter directly if provided, otherwise let save_session handle it
-                qa_handler.interactive_session(transcript, video_info, output)
+                # Pass video_id for session persistence
+                qa_handler.interactive_session(transcript, video_info, video_id, output)
                 result = None  # No result to save in regular output flow
             elif transcript_only:
                 result = transcript
