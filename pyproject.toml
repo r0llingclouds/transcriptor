@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.scripts]
-yt-transcriber = "yt_transcriber_chunked:main"
+yt-transcriber = "transcriptor:main"
 
 [tool.uv]
 dev-dependencies = []
@@ -29,7 +29,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 include = [
-  "yt_transcriber_chunked.py",
+  "transcriptor.py",
 ]
 
 

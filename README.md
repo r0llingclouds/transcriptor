@@ -46,7 +46,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ### Basic Transcription and Summary
 
 ```bash
-uv run ./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./transcriptor.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Quick Question Mode
@@ -54,12 +54,12 @@ uv run ./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID"
 Ask a single question about the video without entering interactive mode:
 
 ```bash
-uv run ./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID" "What is the main topic discussed?"
+uv run ./transcriptor.py "https://www.youtube.com/watch?v=VIDEO_ID" "What is the main topic discussed?"
 ```
 
 Or use the explicit flag:
 ```bash
-uv run ./yt_transcriber_chunked.py --ask "What are the key points?" "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./transcriptor.py --ask "What are the key points?" "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Interactive Q&A Mode
@@ -67,7 +67,7 @@ uv run ./yt_transcriber_chunked.py --ask "What are the key points?" "https://www
 Enter an interactive session to ask multiple questions:
 
 ```bash
-uv run ./yt_transcriber_chunked.py --qa "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./transcriptor.py --qa "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Transcript Only
@@ -75,13 +75,13 @@ uv run ./yt_transcriber_chunked.py --qa "https://www.youtube.com/watch?v=VIDEO_I
 Get just the raw transcript without summarization:
 
 ```bash
-uv run ./yt_transcriber_chunked.py --transcript-only "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./transcriptor.py --transcript-only "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Advanced Options
 
 ```bash
-uv run ./yt_transcriber_chunked.py \
+uv run ./transcriptor.py \
   --provider anthropic \
   --detail detailed \
   --language es \
@@ -158,19 +158,19 @@ The tool handles large audio files automatically:
 ### Basic Usage
 ```bash
 # Simple summary (uv will ensure deps are available)
-uv run ./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ"
+uv run ./transcriptor.py "https://youtu.be/dQw4w9WgXcQ"
 
 # Quick question
-uv run ./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ" "What is this video about?"
+uv run ./transcriptor.py "https://youtu.be/dQw4w9WgXcQ" "What is this video about?"
 
 # Interactive Q&A
-uv run ./yt_transcriber_chunked.py --qa "https://youtu.be/dQw4w9WgXcQ"
+uv run ./transcriptor.py --qa "https://youtu.be/dQw4w9WgXcQ"
 ```
 
 ### Advanced Usage
 ```bash
 # Detailed summary with Anthropic, Spanish transcription
-uv run ./yt_transcriber_chunked.py \
+uv run ./transcriptor.py \
   --provider anthropic \
   --detail detailed \
   --language es \
@@ -178,7 +178,7 @@ uv run ./yt_transcriber_chunked.py \
   "https://youtu.be/dQw4w9WgXcQ"
 
 # Just get the transcript
-uv run ./yt_transcriber_chunked.py --transcript-only "https://youtu.be/dQw4w9WgXcQ"
+uv run ./transcriptor.py --transcript-only "https://youtu.be/dQw4w9WgXcQ"
 ```
 
 ## Error Handling
