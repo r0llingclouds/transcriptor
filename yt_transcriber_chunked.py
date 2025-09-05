@@ -364,6 +364,11 @@ Transcript:
         )
         return response.content[0].text
     
+    def quick_answer(self, question: str, transcript: str, video_info: dict) -> str:
+        """Get a quick answer without loading conversation history or starting interactive session"""
+        # Use answer_question with no history for a single response
+        return self.answer_question(question, transcript, video_info, conversation_history=None)
+    
     def get_session_filename(self, video_id: str) -> str:
         """Get the standard session filename for a video ID"""
         return os.path.join(self.sessions_dir, f"{video_id}_qa.json")
@@ -513,10 +518,15 @@ Transcript:
               default='openai', help='LLM provider for summarization')
 @click.option('--show-temp-dir', is_flag=True, help='Show temp directory location and preserve it')
 @click.option('--qa', is_flag=True, help='Interactive Q&A mode - ask questions about the video')
-def main(video_url, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa):
+@click.option('--ask', help='Quick question mode - get a single answer without interaction')
+def main(video_url, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask):
     # Validate options
     if qa and transcript_only:
         console.print("[red]Error: Cannot use --qa and --transcript-only together[/red]")
+        sys.exit(1)
+    
+    if ask and (qa or transcript_only):
+        console.print("[red]Error: Cannot use --ask with --qa or --transcript-only[/red]")
         sys.exit(1)
     
     audio_file = None
@@ -579,7 +589,32 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
             
             console.print(f"[green]✓ Transcription complete ({len(transcript)} characters)[/green]")
             
-            if qa:
+            if ask:
+                # Quick answer mode - no session, no interaction
+                progress.update(task, description="Getting answer...")
+                qa_handler = QAHandler(api_key=api_key, provider=provider)
+                answer = qa_handler.quick_answer(ask, transcript, video_info)
+                
+                console.print(Panel.fit(
+                    f"[bold]Question:[/bold] {ask}",
+                    border_style="cyan"
+                ))
+                console.print(Panel(
+                    answer,
+                    title="[bold]Answer[/bold]",
+                    border_style="green"
+                ))
+                
+                # Optionally save to file if output specified
+                if output:
+                    with open(output, 'w', encoding='utf-8') as f:
+                        f.write(f"# Quick Q&A: {video_info['title']}\n\n")
+                        f.write(f"**Question:** {ask}\n\n")
+                        f.write(f"**Answer:** {answer}\n")
+                    console.print(f"[green]✓ Answer saved to {output}[/green]")
+                
+                result = None
+            elif qa:
                 # Interactive Q&A mode - close progress first to avoid display conflicts
                 progress.update(task, description="Starting Q&A session...", completed=True)
                 progress.stop()  # Stop the progress display
