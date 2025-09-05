@@ -2,7 +2,9 @@
   "video_info": {
     "title": "Terence Tao on Andrew Wiles proving Fermat's Last Theorem | Lex Fridman Podcast Clips",
     "duration": 260,
-    "uploader": "Lex Clips"
+    "uploader": "Lex Clips",
+    "view_count": 103016,
+    "upload_date": "20250615"
   },
   "qa_history": [
     {
@@ -20,7 +22,11 @@
     {
       "question": "what was my last question?",
       "answer": "Your last question was, \"whats Tao thought about this?\" referring to Terence Tao's thoughts on Andrew Wiles proving Fermat's Last Theorem."
+    },
+    {
+      "question": "did I ask about Tao thoughts on this",
+      "answer": "Yes, you did ask about Terence Tao's thoughts on Andrew Wiles proving Fermat's Last Theorem."
     }
   ],
-  "last_updated": "2025-09-05T22:43:53.440694"
+  "last_updated": "2025-09-05T22:56:54.064205"
 }

@@ -464,24 +464,18 @@ Transcript:
         
         title = video_info.get('title', '')
         
-        # Check for existing session
+        # Check for existing session and load automatically
         if self.load_session(video_id, title):
-            console.print(f"[green]✓ Found existing Q&A session with {len(self.qa_history)} previous exchanges[/green]")
-            continue_session = Prompt.ask("Continue previous session?", choices=["yes", "no"], default="yes")
-            if continue_session == "no":
-                self.qa_history = []
-                console.print("[yellow]Starting new session...[/yellow]")
-            else:
-                console.print("[green]Continuing previous session...[/green]")
-                # Show last Q&A to refresh memory
-                if self.qa_history:
-                    last_qa = self.qa_history[-1]
-                    console.print(Panel.fit(
-                        f"[dim]Last question:[/dim] {last_qa['question']}\n"
-                        f"[dim]Last answer:[/dim] {last_qa['answer'][:200]}...",
-                        title="Previous Context",
-                        border_style="dim"
-                    ))
+            console.print(f"[green]✓ Loaded existing Q&A session with {len(self.qa_history)} previous exchanges[/green]")
+            # Show last Q&A to refresh memory
+            if self.qa_history:
+                last_qa = self.qa_history[-1]
+                console.print(Panel.fit(
+                    f"[dim]Last question:[/dim] {last_qa['question']}\n"
+                    f"[dim]Last answer:[/dim] {last_qa['answer'][:200]}...",
+                    title="Previous Context",
+                    border_style="dim"
+                ))
         
         console.print(Panel.fit(
             f"[bold green]Interactive Q&A Session[/bold green]\n"
@@ -602,41 +596,46 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 console.print("[red]Error: Could not extract video ID from URL[/red]")
                 sys.exit(1)
             
-            # Check for cached transcript
-            # First try to get video info for title-based filename
+            # Check for cached transcript using video ID only (no title extraction needed)
+            progress.update(task, description="Checking for cached transcript...")
             transcript_file = None
-            try:
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                    temp_video_info = ydl.extract_info(video_url, download=False)
-                    video_title = temp_video_info.get('title', '')
-                    if video_title:
-                        sanitized_title = sanitize_filename(video_title)
-                        new_format_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
-                        if os.path.exists(new_format_file):
-                            transcript_file = new_format_file
-            except:
-                pass
             
-            # If no new format file found, check for old format
-            if not transcript_file:
-                old_format_file = f"transcripts/{video_id}_transcript.txt"
-                if os.path.exists(old_format_file):
-                    transcript_file = old_format_file
+            # Look for cached transcript file starting with the video ID
+            import glob
+            import json
+            cached_files = glob.glob(f"transcripts/{video_id}_*_transcript.txt")
+            transcript_file = cached_files[0] if cached_files else None
             
+            video_info = None
             if transcript_file:
                 progress.update(task, description="Loading cached transcript...")
                 with open(transcript_file, 'r', encoding='utf-8') as f:
                     transcript = f.read()
                 console.print(f"[green]✓ Using cached transcript from {transcript_file}[/green]")
                 
-                # Get video info without downloading
-                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                    video_info = ydl.extract_info(video_url, download=False)
-                    video_info = {
-                        'title': video_info.get('title', 'Unknown'),
-                        'duration': video_info.get('duration', 0),
-                        'uploader': video_info.get('uploader', 'Unknown'),
-                    }
+                # Load cached video info (same filename pattern as transcript)
+                info_file = transcript_file.replace('_transcript.txt', '_info.json')
+                if os.path.exists(info_file):
+                    try:
+                        with open(info_file, 'r', encoding='utf-8') as f:
+                            video_info = json.load(f)
+                        console.print(f"[green]✓ Using cached video info[/green]")
+                    except Exception as e:
+                        console.print(f"[yellow]Warning: Could not load cached video info: {e}[/yellow]")
+                        video_info = None
+                
+                # If no cached video info, get it from YouTube
+                if not video_info:
+                    progress.update(task, description="Getting video info...")
+                    with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                        temp_info = ydl.extract_info(video_url, download=False)
+                        video_info = {
+                            'title': temp_info.get('title', 'Unknown'),
+                            'duration': temp_info.get('duration', 0),
+                            'uploader': temp_info.get('uploader', 'Unknown'),
+                            'view_count': temp_info.get('view_count', 0),
+                            'upload_date': temp_info.get('upload_date', ''),
+                        }
                 audio_file = None
             else:
                 # Create extractor only when we need to download
@@ -715,16 +714,23 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
             # Always save the transcript for reuse (if we just transcribed it)
             if not transcript_file or not os.path.exists(transcript_file):
                 os.makedirs("transcripts", exist_ok=True)
-                # Generate the proper filename with title if we have video_info
-                if 'title' in video_info and video_info['title']:
-                    sanitized_title = sanitize_filename(video_info['title'])
-                    transcript_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
-                else:
-                    # Fallback to old format if no title
-                    transcript_file = f"transcripts/{video_id}_transcript.txt"
+                # Generate filename with title (new format only)
+                sanitized_title = sanitize_filename(video_info['title'])
+                transcript_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
+                info_file = f"transcripts/{video_id}_{sanitized_title}_info.json"
+                
+                # Save transcript
                 with open(transcript_file, 'w', encoding='utf-8') as f:
                     f.write(transcript)
                 console.print(f"[green]✓ Transcript cached in {transcript_file}[/green]")
+                
+                # Save video info
+                try:
+                    with open(info_file, 'w', encoding='utf-8') as f:
+                        json.dump(video_info, f, indent=2, ensure_ascii=False)
+                    console.print(f"[green]✓ Video info cached in {info_file}[/green]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not save video info: {e}[/yellow]")
             
             # Save output if requested (skip for Q&A mode as it handles its own saving)
             if not qa and (output or (transcript_only and len(transcript) > 5000)):
