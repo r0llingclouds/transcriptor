@@ -14,6 +14,8 @@ from pydub import AudioSegment
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.markdown import Markdown
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -282,6 +284,159 @@ Focus only on the main topic and conclusion.""",
         return response.content[0].text
 
 
+class QAHandler:
+    def __init__(self, api_key: str = None, provider: str = 'openai'):
+        self.provider = provider
+        self.qa_history = []
+        
+        if provider == 'openai':
+            self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+            if not self.api_key:
+                raise ValueError("OpenAI API key not found")
+            from openai import OpenAI
+            self.client = OpenAI(api_key=self.api_key)
+        else:
+            self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+            if not self.api_key:
+                raise ValueError("Anthropic API key not found")
+            from anthropic import Anthropic
+            self.client = Anthropic(api_key=self.api_key)
+    
+    def answer_question(self, question: str, transcript: str, video_info: dict) -> str:
+        """Answer a single question based on the transcript"""
+        system_prompt = f"""You are an AI assistant helping users understand video content. 
+You have access to the full transcript of a video titled "{video_info.get('title', 'Unknown')}" 
+by {video_info.get('uploader', 'Unknown')} (duration: {video_info.get('duration', 0)}s).
+
+Answer questions based on the transcript content. Be specific and cite relevant parts when appropriate.
+If the answer isn't in the transcript, say so clearly."""
+
+        user_prompt = f"""Based on the following transcript, please answer this question: {question}
+
+Transcript:
+{transcript}"""
+        
+        if self.provider == 'openai':
+            return self._answer_openai(system_prompt, user_prompt)
+        else:
+            return self._answer_anthropic(system_prompt, user_prompt)
+    
+    def _answer_openai(self, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.chat.completions.create(
+            model='gpt-4o-mini',
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=2000
+        )
+        return response.choices[0].message.content
+    
+    def _answer_anthropic(self, system_prompt: str, user_prompt: str) -> str:
+        response = self.client.messages.create(
+            model='claude-3-5-sonnet-20241022',
+            max_tokens=2000,
+            temperature=0.3,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+        return response.content[0].text
+    
+    def interactive_session(self, transcript: str, video_info: dict, output_file: Optional[str] = None):
+        """Run an interactive Q&A session"""
+        console.print(Panel.fit(
+            f"[bold green]Interactive Q&A Session[/bold green]\n"
+            f"Video: {video_info.get('title', 'Unknown')}\n"
+            f"Duration: {video_info.get('duration', 0)}s | Uploader: {video_info.get('uploader', 'Unknown')}\n\n"
+            f"[dim]Commands:[/dim]\n"
+            f"  • Type your question and press Enter\n"
+            f"  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
+            f"  • [cyan]/save[/cyan] - Save Q&A history\n"
+            f"  • [cyan]/help[/cyan] - Show this help",
+            border_style="green"
+        ))
+        
+        while True:
+            try:
+                question = Prompt.ask("\n[bold cyan]Your question[/bold cyan]")
+                
+                if question.lower() in ['/quit', '/exit']:
+                    if output_file or self.qa_history:
+                        save = Prompt.ask("Save Q&A history?", choices=["yes", "no"], default="yes")
+                        if save == "yes":
+                            self.save_session(video_info, output_file)
+                    console.print("[yellow]Ending Q&A session...[/yellow]")
+                    break
+                
+                elif question.lower() == '/save':
+                    self.save_session(video_info, output_file)
+                    console.print("[green]✓ Session saved[/green]")
+                    continue
+                
+                elif question.lower() == '/help':
+                    console.print(Panel.fit(
+                        "[dim]Commands:[/dim]\n"
+                        "  • Type your question and press Enter\n"
+                        "  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
+                        "  • [cyan]/save[/cyan] - Save Q&A history\n"
+                        "  • [cyan]/help[/cyan] - Show this help",
+                        border_style="dim"
+                    ))
+                    continue
+                
+                # Process the question
+                with console.status("[bold green]Thinking..."):
+                    answer = self.answer_question(question, transcript, video_info)
+                
+                # Store in history
+                self.qa_history.append({"question": question, "answer": answer})
+                
+                # Display answer
+                console.print(Panel(
+                    Markdown(answer),
+                    title="[bold]Answer[/bold]",
+                    border_style="green"
+                ))
+                
+            except KeyboardInterrupt:
+                console.print("\n[yellow]Session interrupted. Saving and exiting...[/yellow]")
+                if output_file or self.qa_history:
+                    self.save_session(video_info, output_file)
+                break
+            except Exception as e:
+                console.print(f"[red]Error: {str(e)}[/red]")
+    
+    def save_session(self, video_info: dict, output_file: Optional[str] = None):
+        """Save Q&A session to file"""
+        if not self.qa_history:
+            console.print("[yellow]No Q&A history to save[/yellow]")
+            return
+        
+        if not output_file:
+            # Sanitize filename - remove/replace problematic characters
+            title = video_info.get('title', 'video')[:50]
+            # Replace problematic characters with underscores
+            import string
+            valid_chars = f"-_.() {string.ascii_letters}{string.digits}"
+            sanitized_title = ''.join(c if c in valid_chars else '_' for c in title)
+            output_file = f"{sanitized_title}_qa.md"
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            f.write(f"# Q&A Session: {video_info.get('title', 'Unknown')}\n\n")
+            f.write(f"**Duration:** {video_info.get('duration', 0)}s\n")
+            f.write(f"**Uploader:** {video_info.get('uploader', 'Unknown')}\n\n")
+            f.write("---\n\n")
+            
+            for i, qa in enumerate(self.qa_history, 1):
+                f.write(f"## Question {i}\n\n")
+                f.write(f"**Q:** {qa['question']}\n\n")
+                f.write(f"**A:** {qa['answer']}\n\n")
+                f.write("---\n\n")
+        
+        console.print(f"[green]✓ Q&A session saved to {output_file}[/green]")
+
+
 @click.command()
 @click.argument('video_url')
 @click.option('--api-key', help='OpenAI API key for transcription and summarization')
@@ -294,7 +449,13 @@ Focus only on the main topic and conclusion.""",
 @click.option('--provider', type=click.Choice(['openai', 'anthropic']), 
               default='openai', help='LLM provider for summarization')
 @click.option('--show-temp-dir', is_flag=True, help='Show temp directory location and preserve it')
-def main(video_url, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir):
+@click.option('--qa', is_flag=True, help='Interactive Q&A mode - ask questions about the video')
+def main(video_url, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa):
+    # Validate options
+    if qa and transcript_only:
+        console.print("[red]Error: Cannot use --qa and --transcript-only together[/red]")
+        sys.exit(1)
+    
     audio_file = None
     extractor = None
     try:
@@ -355,7 +516,16 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
             
             console.print(f"[green]✓ Transcription complete ({len(transcript)} characters)[/green]")
             
-            if transcript_only:
+            if qa:
+                # Interactive Q&A mode - close progress first to avoid display conflicts
+                progress.update(task, description="Starting Q&A session...", completed=True)
+                progress.stop()  # Stop the progress display
+                
+                qa_handler = QAHandler(api_key=api_key, provider=provider)
+                # Use the output parameter directly if provided, otherwise let save_session handle it
+                qa_handler.interactive_session(transcript, video_info, output)
+                result = None  # No result to save in regular output flow
+            elif transcript_only:
                 result = transcript
                 if len(transcript) < 5000:  # Only show in panel if not too long
                     console.print(Panel(transcript, title="Transcript", border_style="green"))
@@ -376,8 +546,8 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
                     f.write(transcript)
                 console.print(f"[green]✓ Transcript cached in {transcript_file}[/green]")
             
-            # Save output if requested
-            if output or (transcript_only and len(transcript) > 5000):
+            # Save output if requested (skip for Q&A mode as it handles its own saving)
+            if not qa and (output or (transcript_only and len(transcript) > 5000)):
                 output_file = output or f"{video_info['title'][:50]}_{'transcript' if transcript_only else 'summary'}.md"
                 progress.update(task, description="Saving to file...")
                 with open(output_file, 'w', encoding='utf-8') as f:
@@ -393,7 +563,8 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
                     f.write(result)
                 console.print(f"[green]✓ Saved to {output_file}[/green]")
             
-            progress.update(task, description="Done!", completed=True)
+            if not qa:  # Only show "Done!" for non-interactive modes
+                progress.update(task, description="Done!", completed=True)
     
     except ValueError as e:
         console.print(f"[red]Configuration Error: {str(e)}[/red]")
