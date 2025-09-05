@@ -316,7 +316,7 @@ class QAHandler:
     def __init__(self, api_key: str = None, provider: str = 'openai'):
         self.provider = provider
         self.qa_history = []
-        self.sessions_dir = "qa_sessions"
+        self.sessions_dir = "transcripts"
         
         if provider == 'openai':
             self.api_key = api_key or os.getenv('OPENAI_API_KEY')
@@ -398,45 +398,45 @@ Transcript:
         return self.answer_question(question, transcript, video_info, conversation_history=None)
     
     def get_session_filename(self, video_id: str, title: str = None) -> str:
-        """Get the standard session filename for a video ID"""
+        """Get the unified cache filename for a video ID (same as transcript cache)"""
         if title:
             sanitized_title = sanitize_filename(title)
-            return os.path.join(self.sessions_dir, f"{video_id}_{sanitized_title}_qa.json")
+            return os.path.join(self.sessions_dir, f"{video_id}_{sanitized_title}.json")
         else:
-            # Fallback to old format
-            return os.path.join(self.sessions_dir, f"{video_id}_qa.json")
+            # Fallback for videos without title
+            return os.path.join(self.sessions_dir, f"{video_id}.json")
     
     def load_session(self, video_id: str, title: str = None) -> bool:
-        """Load existing Q&A session if it exists"""
+        """Load existing Q&A session from unified cache file"""
         import json
+        import glob
         
-        # Try new format first (with title)
+        # Try to find unified cache file by video ID
+        session_file = None
         if title:
+            # Try with title first
             session_file = self.get_session_filename(video_id, title)
-            if os.path.exists(session_file):
-                try:
-                    with open(session_file, 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-                        self.qa_history = data.get('qa_history', [])
-                        return True
-                except Exception as e:
-                    console.print(f"[yellow]Warning: Could not load session: {e}[/yellow]")
         
-        # Fallback to old format (without title)
-        session_file = self.get_session_filename(video_id)
-        if os.path.exists(session_file):
+        # If not found or no title, try glob search
+        if not session_file or not os.path.exists(session_file):
+            cache_files = glob.glob(f"transcripts/{video_id}_*.json")
+            if cache_files:
+                session_file = cache_files[0]  # Use first match
+        
+        # Try to load QA history from unified file
+        if session_file and os.path.exists(session_file):
             try:
                 with open(session_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     self.qa_history = data.get('qa_history', [])
-                    return True
+                    return len(self.qa_history) > 0  # Only return True if there's actual QA history
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not load session: {e}[/yellow]")
         
         return False
     
     def save_session_json(self, video_id: str, video_info: dict):
-        """Save Q&A session in JSON format for persistence"""
+        """Save Q&A session by merging with existing unified cache file"""
         import json
         from datetime import datetime
         
@@ -447,15 +447,26 @@ Transcript:
         title = video_info.get('title', '')
         session_file = self.get_session_filename(video_id, title)
         
-        data = {
-            'video_info': video_info,
+        # Try to load existing cache data first
+        existing_data = {}
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not load existing cache for QA merge: {e}[/yellow]")
+        
+        # Merge QA data with existing cache
+        merged_data = {
+            'video_info': existing_data.get('video_info', video_info),
+            'transcript': existing_data.get('transcript', ''),
             'qa_history': self.qa_history,
             'last_updated': datetime.now().isoformat()
         }
         
         try:
             with open(session_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
+                json.dump(merged_data, f, indent=2, ensure_ascii=False)
         except Exception as e:
             console.print(f"[yellow]Warning: Could not save session: {e}[/yellow]")
     
