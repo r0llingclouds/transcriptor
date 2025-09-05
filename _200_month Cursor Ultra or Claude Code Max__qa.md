@@ -9,7 +9,15 @@
 
 **Q:** who is the guest?
 
-**A:** The guest in the video is Robin, who has about 20 years of experience in the coding industry. He is on a mission to teach people, especially those who haven't coded before, how to use AI systems to code and create applications. Robin discusses his experiences and insights related to coding with AI during the conversation with Ray Fernando.
+**A:** The guest is Robin, who has about 20 years of experience in the coding industry. He is passionate about teaching non-technical people how to use AI systems for coding and app development.
+
+---
+
+## Question 2
+
+**Q:** what did I just ask?
+
+**A:** You asked, "who is the guest?"
 
 ---
 

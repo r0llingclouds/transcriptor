@@ -302,44 +302,64 @@ class QAHandler:
             from anthropic import Anthropic
             self.client = Anthropic(api_key=self.api_key)
     
-    def answer_question(self, question: str, transcript: str, video_info: dict) -> str:
-        """Answer a single question based on the transcript"""
+    def answer_question(self, question: str, transcript: str, video_info: dict, conversation_history: list = None) -> str:
+        """Answer a single question based on the transcript with conversation context"""
         system_prompt = f"""You are an AI assistant helping users understand video content. 
 You have access to the full transcript of a video titled "{video_info.get('title', 'Unknown')}" 
 by {video_info.get('uploader', 'Unknown')} (duration: {video_info.get('duration', 0)}s).
 
 Answer questions based on the transcript content. Be specific and cite relevant parts when appropriate.
-If the answer isn't in the transcript, say so clearly."""
-
-        user_prompt = f"""Based on the following transcript, please answer this question: {question}
+If the answer isn't in the transcript, say so clearly.
+You can reference previous questions and answers in this conversation to provide contextual responses.
 
 Transcript:
 {transcript}"""
         
         if self.provider == 'openai':
-            return self._answer_openai(system_prompt, user_prompt)
+            return self._answer_openai(system_prompt, question, conversation_history)
         else:
-            return self._answer_anthropic(system_prompt, user_prompt)
+            return self._answer_anthropic(system_prompt, question, conversation_history)
     
-    def _answer_openai(self, system_prompt: str, user_prompt: str) -> str:
+    def _answer_openai(self, system_prompt: str, question: str, conversation_history: list = None) -> str:
+        # Build messages array with conversation history
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Add conversation history if available
+        if conversation_history:
+            for qa in conversation_history:
+                messages.append({"role": "user", "content": qa["question"]})
+                messages.append({"role": "assistant", "content": qa["answer"]})
+        
+        # Add current question
+        messages.append({"role": "user", "content": question})
+        
         response = self.client.chat.completions.create(
             model='gpt-4o-mini',
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
+            messages=messages,
             temperature=0.3,
             max_tokens=2000
         )
         return response.choices[0].message.content
     
-    def _answer_anthropic(self, system_prompt: str, user_prompt: str) -> str:
+    def _answer_anthropic(self, system_prompt: str, question: str, conversation_history: list = None) -> str:
+        # Build messages array with conversation history
+        messages = []
+        
+        # Add conversation history if available
+        if conversation_history:
+            for qa in conversation_history:
+                messages.append({"role": "user", "content": qa["question"]})
+                messages.append({"role": "assistant", "content": qa["answer"]})
+        
+        # Add current question
+        messages.append({"role": "user", "content": question})
+        
         response = self.client.messages.create(
             model='claude-3-5-sonnet-20241022',
             max_tokens=2000,
             temperature=0.3,
             system=system_prompt,
-            messages=[{"role": "user", "content": user_prompt}]
+            messages=messages
         )
         return response.content[0].text
     
@@ -353,6 +373,7 @@ Transcript:
             f"  • Type your question and press Enter\n"
             f"  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
             f"  • [cyan]/save[/cyan] - Save Q&A history\n"
+            f"  • [cyan]/clear[/cyan] - Clear conversation context\n"
             f"  • [cyan]/help[/cyan] - Show this help",
             border_style="green"
         ))
@@ -374,20 +395,26 @@ Transcript:
                     console.print("[green]✓ Session saved[/green]")
                     continue
                 
+                elif question.lower() == '/clear':
+                    self.qa_history = []
+                    console.print("[yellow]Conversation context cleared[/yellow]")
+                    continue
+                
                 elif question.lower() == '/help':
                     console.print(Panel.fit(
                         "[dim]Commands:[/dim]\n"
                         "  • Type your question and press Enter\n"
                         "  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
                         "  • [cyan]/save[/cyan] - Save Q&A history\n"
+                        "  • [cyan]/clear[/cyan] - Clear conversation context\n"
                         "  • [cyan]/help[/cyan] - Show this help",
                         border_style="dim"
                     ))
                     continue
                 
-                # Process the question
+                # Process the question with conversation history
                 with console.status("[bold green]Thinking..."):
-                    answer = self.answer_question(question, transcript, video_info)
+                    answer = self.answer_question(question, transcript, video_info, self.qa_history)
                 
                 # Store in history
                 self.qa_history.append({"question": question, "answer": answer})
