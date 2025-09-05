@@ -166,9 +166,34 @@ class ChunkedWhisperTranscriber:
             transcript = self.transcribe_chunk(chunk, language)
             transcripts.append(transcript)
             
+            # Save chunk transcript to temp folder
+            if self.session_temp_dir and os.path.exists(self.session_temp_dir):
+                chunk_transcript_file = os.path.join(
+                    os.path.dirname(chunk), 
+                    f"chunk_{i}_transcript.txt"
+                )
+                try:
+                    with open(chunk_transcript_file, 'w', encoding='utf-8') as f:
+                        f.write(transcript)
+                except Exception:
+                    pass  # Silent fail for transcript saving
+            
             # No need to clean up individual chunks - they'll be cleaned with session dir
         
-        return " ".join(transcripts)
+        # Save merged transcript to temp folder
+        merged_transcript = " ".join(transcripts)
+        if self.session_temp_dir and os.path.exists(self.session_temp_dir):
+            merged_transcript_file = os.path.join(
+                self.session_temp_dir,
+                "merged_transcript.txt"
+            )
+            try:
+                with open(merged_transcript_file, 'w', encoding='utf-8') as f:
+                    f.write(merged_transcript)
+            except Exception:
+                pass  # Silent fail for transcript saving
+        
+        return merged_transcript
 
 
 class Summarizer:
