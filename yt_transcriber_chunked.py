@@ -406,7 +406,7 @@ Transcript:
         except Exception as e:
             console.print(f"[yellow]Warning: Could not save session: {e}[/yellow]")
     
-    def interactive_session(self, transcript: str, video_info: dict, video_id: str, output_file: Optional[str] = None):
+    def interactive_session(self, transcript: str, video_info: dict, video_id: str):
         """Run an interactive Q&A session"""
         
         # Check for existing session
@@ -448,18 +448,13 @@ Transcript:
                 if question.lower() in ['/quit', '/exit']:
                     # Always save JSON session
                     self.save_session_json(video_id, video_info)
-                    # Optionally save markdown file
-                    if output_file or self.qa_history:
-                        save = Prompt.ask("Save Q&A history to markdown?", choices=["yes", "no"], default="yes")
-                        if save == "yes":
-                            self.save_session(video_info, output_file)
                     console.print("[yellow]Ending Q&A session...[/yellow]")
                     console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
                     break
                 
                 elif question.lower() == '/save':
-                    self.save_session(video_info, output_file)
-                    console.print("[green]✓ Session saved[/green]")
+                    self.save_session_json(video_id, video_info)
+                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
                     continue
                 
                 elif question.lower() == '/clear':
@@ -499,40 +494,10 @@ Transcript:
             except KeyboardInterrupt:
                 console.print("\n[yellow]Session interrupted. Saving and exiting...[/yellow]")
                 self.save_session_json(video_id, video_info)
-                if output_file or self.qa_history:
-                    self.save_session(video_info, output_file)
+                console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
                 break
             except Exception as e:
                 console.print(f"[red]Error: {str(e)}[/red]")
-    
-    def save_session(self, video_info: dict, output_file: Optional[str] = None):
-        """Save Q&A session to file"""
-        if not self.qa_history:
-            console.print("[yellow]No Q&A history to save[/yellow]")
-            return
-        
-        if not output_file:
-            # Sanitize filename - remove/replace problematic characters
-            title = video_info.get('title', 'video')[:50]
-            # Replace problematic characters with underscores
-            import string
-            valid_chars = f"-_.() {string.ascii_letters}{string.digits}"
-            sanitized_title = ''.join(c if c in valid_chars else '_' for c in title)
-            output_file = f"{sanitized_title}_qa.md"
-        
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"# Q&A Session: {video_info.get('title', 'Unknown')}\n\n")
-            f.write(f"**Duration:** {video_info.get('duration', 0)}s\n")
-            f.write(f"**Uploader:** {video_info.get('uploader', 'Unknown')}\n\n")
-            f.write("---\n\n")
-            
-            for i, qa in enumerate(self.qa_history, 1):
-                f.write(f"## Question {i}\n\n")
-                f.write(f"**Q:** {qa['question']}\n\n")
-                f.write(f"**A:** {qa['answer']}\n\n")
-                f.write("---\n\n")
-        
-        console.print(f"[green]✓ Q&A session saved to {output_file}[/green]")
 
 
 @click.command()
@@ -621,7 +586,7 @@ def main(video_url, api_key, language, detail, output, keep_audio, transcript_on
                 
                 qa_handler = QAHandler(api_key=api_key, provider=provider)
                 # Pass video_id for session persistence
-                qa_handler.interactive_session(transcript, video_info, video_id, output)
+                qa_handler.interactive_session(transcript, video_info, video_id)
                 result = None  # No result to save in regular output flow
             elif transcript_only:
                 result = transcript

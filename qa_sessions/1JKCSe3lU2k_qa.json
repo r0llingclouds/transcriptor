@@ -7,16 +7,16 @@
   "qa_history": [
     {
       "question": "who is the guest?",
-      "answer": "The guest in the video is Robin, who has about 20 years of experience in the coding industry. He is on a mission to teach people, especially those who haven't coded before, how to use AI systems for coding and app development."
+      "answer": "The guest in the video is Robin, who has about 20 years of experience in the coding industry. He focuses on teaching non-technical people how to use AI systems for coding and app development. Robin shares insights about his experiences with various AI coding tools and platforms during the discussion."
     },
     {
-      "question": "does he like claude code",
-      "answer": "Yes, Robin expresses a positive view of Claude Code. He mentions that he uses it frequently and appreciates its capabilities, particularly for maximum output and handling agentic tasks effectively. He acknowledges that while he also uses Cursor, he finds Claude Code to be very good for certain tasks."
+      "question": "does he like claude code or cursor ultra better",
+      "answer": "Robin expresses a preference for both Claude Code and Cursor Ultra, depending on the context of use. He mentions that he is \"always torn between Cloud Code for like maximum output\" and Cursor when he wants \"more of a full service suite.\" He acknowledges that both tools have their strengths and weaknesses, indicating that he uses them based on the specific tasks he is working on."
     },
     {
-      "question": "what was my last question",
-      "answer": "Your last question was, \"does he like claude code?\""
+      "question": "what was my last question?",
+      "answer": "Your last question was, \"does he like claude code or cursor ultra better?\""
     }
   ],
-  "last_updated": "2025-09-05T21:45:55.973728"
+  "last_updated": "2025-09-05T22:00:50.230665"
 }
