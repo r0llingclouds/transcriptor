@@ -456,13 +456,16 @@ Transcript:
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not load existing cache for QA merge: {e}[/yellow]")
         
-        # Merge QA data with existing cache
-        merged_data = {
+        # Merge QA data with existing cache, preserving any existing fields like summaries
+        if not isinstance(existing_data, dict):
+            existing_data = {}
+        merged_data = existing_data.copy()
+        merged_data.update({
             'video_info': existing_data.get('video_info', video_info),
             'transcript': existing_data.get('transcript', ''),
             'qa_history': self.qa_history,
             'last_updated': datetime.now().isoformat()
-        }
+        })
         
         try:
             with open(session_file, 'w', encoding='utf-8') as f:
