@@ -483,7 +483,7 @@ Transcript:
             f"Duration: {video_info.get('duration', 0)}s | Uploader: {video_info.get('uploader', 'Unknown')}\n\n"
             f"[dim]Commands:[/dim]\n"
             f"  • Type your question and press Enter\n"
-            f"  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
+            f"  • [cyan]/quit[/cyan], [cyan]/exit[/cyan], or [cyan]/q[/cyan] - End session\n"
             f"  • [cyan]/save[/cyan] - Save Q&A history\n"
             f"  • [cyan]/clear[/cyan] - Clear conversation context\n"
             f"  • [cyan]/help[/cyan] - Show this help",
@@ -494,7 +494,7 @@ Transcript:
             try:
                 question = Prompt.ask("\n[bold cyan]Your question[/bold cyan]")
                 
-                if question.lower() in ['/quit', '/exit']:
+                if question.lower() in ['/quit', '/exit', '/q']:
                     # Always save JSON session
                     self.save_session_json(video_id, video_info)
                     console.print("[yellow]Ending Q&A session...[/yellow]")
@@ -515,7 +515,7 @@ Transcript:
                     console.print(Panel.fit(
                         "[dim]Commands:[/dim]\n"
                         "  • Type your question and press Enter\n"
-                        "  • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - End session\n"
+                        "  • [cyan]/quit[/cyan], [cyan]/exit[/cyan], or [cyan]/q[/cyan] - End session\n"
                         "  • [cyan]/save[/cyan] - Save Q&A history\n"
                         "  • [cyan]/clear[/cyan] - Clear conversation context\n"
                         "  • [cyan]/help[/cyan] - Show this help",
@@ -598,46 +598,31 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
             
             # Check for cached transcript using video ID only (no title extraction needed)
             progress.update(task, description="Checking for cached transcript...")
-            transcript_file = None
             
-            # Look for cached transcript file starting with the video ID
+            # Look for cached JSON file starting with the video ID
             import glob
             import json
-            cached_files = glob.glob(f"transcripts/{video_id}_*_transcript.txt")
-            transcript_file = cached_files[0] if cached_files else None
+            cached_files = glob.glob(f"transcripts/{video_id}_*.json")
+            cache_file = cached_files[0] if cached_files else None
             
             video_info = None
-            if transcript_file:
-                progress.update(task, description="Loading cached transcript...")
-                with open(transcript_file, 'r', encoding='utf-8') as f:
-                    transcript = f.read()
-                console.print(f"[green]✓ Using cached transcript from {transcript_file}[/green]")
+            transcript = None
+            if cache_file:
+                progress.update(task, description="Loading cached data...")
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        cached_data = json.load(f)
+                    
+                    transcript = cached_data.get('transcript', '')
+                    video_info = cached_data.get('video_info', {})
+                    
+                    console.print(f"[green]✓ Using cached transcript and video info from {cache_file}[/green]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not load cached data: {e}[/yellow]")
+                    cache_file = None
                 
-                # Load cached video info (same filename pattern as transcript)
-                info_file = transcript_file.replace('_transcript.txt', '_info.json')
-                if os.path.exists(info_file):
-                    try:
-                        with open(info_file, 'r', encoding='utf-8') as f:
-                            video_info = json.load(f)
-                        console.print(f"[green]✓ Using cached video info[/green]")
-                    except Exception as e:
-                        console.print(f"[yellow]Warning: Could not load cached video info: {e}[/yellow]")
-                        video_info = None
-                
-                # If no cached video info, get it from YouTube
-                if not video_info:
-                    progress.update(task, description="Getting video info...")
-                    with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
-                        temp_info = ydl.extract_info(video_url, download=False)
-                        video_info = {
-                            'title': temp_info.get('title', 'Unknown'),
-                            'duration': temp_info.get('duration', 0),
-                            'uploader': temp_info.get('uploader', 'Unknown'),
-                            'view_count': temp_info.get('view_count', 0),
-                            'upload_date': temp_info.get('upload_date', ''),
-                        }
                 audio_file = None
-            else:
+            if not cache_file:
                 # Create extractor only when we need to download
                 extractor = YouTubeAudioExtractor()
                 
@@ -711,26 +696,25 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 result = summary
                 console.print(Panel(summary, title="Summary", border_style="green"))
             
-            # Always save the transcript for reuse (if we just transcribed it)
-            if not transcript_file or not os.path.exists(transcript_file):
+            # Always save the transcript and video info for reuse (if we just transcribed it)
+            if not cache_file:
                 os.makedirs("transcripts", exist_ok=True)
                 # Generate filename with title (new format only)
                 sanitized_title = sanitize_filename(video_info['title'])
-                transcript_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
-                info_file = f"transcripts/{video_id}_{sanitized_title}_info.json"
+                cache_file = f"transcripts/{video_id}_{sanitized_title}.json"
                 
-                # Save transcript
-                with open(transcript_file, 'w', encoding='utf-8') as f:
-                    f.write(transcript)
-                console.print(f"[green]✓ Transcript cached in {transcript_file}[/green]")
+                # Save combined data
+                cached_data = {
+                    'video_info': video_info,
+                    'transcript': transcript
+                }
                 
-                # Save video info
                 try:
-                    with open(info_file, 'w', encoding='utf-8') as f:
-                        json.dump(video_info, f, indent=2, ensure_ascii=False)
-                    console.print(f"[green]✓ Video info cached in {info_file}[/green]")
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        json.dump(cached_data, f, indent=2, ensure_ascii=False)
+                    console.print(f"[green]✓ Transcript and video info cached in {cache_file}[/green]")
                 except Exception as e:
-                    console.print(f"[yellow]Warning: Could not save video info: {e}[/yellow]")
+                    console.print(f"[yellow]Warning: Could not save cached data: {e}[/yellow]")
             
             # Save output if requested (skip for Q&A mode as it handles its own saving)
             if not qa and (output or (transcript_only and len(transcript) > 5000)):

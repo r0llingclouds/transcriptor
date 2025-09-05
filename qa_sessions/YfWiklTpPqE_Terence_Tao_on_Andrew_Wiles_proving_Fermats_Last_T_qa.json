@@ -3,30 +3,18 @@
     "title": "Terence Tao on Andrew Wiles proving Fermat's Last Theorem | Lex Fridman Podcast Clips",
     "duration": 260,
     "uploader": "Lex Clips",
-    "view_count": 103016,
+    "view_count": 103031,
     "upload_date": "20250615"
   },
   "qa_history": [
     {
-      "question": "what is that theorem?",
-      "answer": "Fermat's Last Theorem states that there are no three positive integers \\(a\\), \\(b\\), and \\(c\\) that satisfy the equation \\(a^n + b^n = c^n\\) for any integer value of \\(n\\) greater than 2. This theorem was famously conjectured by Pierre de Fermat in 1637 and remained unproven for over 350 years until Andrew Wiles provided a proof in 1994. The theorem is significant in the field of number theory and has a rich history involving various mathematical concepts and developments."
-    },
-    {
-      "question": "who proved it?",
-      "answer": "Fermat's Last Theorem was proved by Andrew Wiles in 1994. His proof was a significant achievement in mathematics and garnered considerable attention, as it resolved a problem that had remained unsolved for over 350 years."
-    },
-    {
-      "question": "whats Tao thought about this?",
-      "answer": "Terence Tao reflects positively on Andrew Wiles' achievement in proving Fermat's Last Theorem. He describes Wiles' journey as \"romantic,\" fitting the image of mathematicians as \"eccentric wizards.\" Tao admires Wiles' tenacity and fearlessness in tackling problems, noting that his style of problem-solving is quite different from his own. Tao prefers a more collaborative approach and tends to move on from problems that prove too difficult, while he acknowledges the importance of having mathematicians like Wiles who persist through multiple attempts until they find a solution. He appreciates the diversity of problem-solving styles in mathematics, stating, \"We need people like that.\""
+      "question": "who is the guest?",
+      "answer": "The guest in the video is Terence Tao, who discusses Andrew Wiles' proof of Fermat's Last Theorem."
     },
     {
       "question": "what was my last question?",
-      "answer": "Your last question was, \"whats Tao thought about this?\" referring to Terence Tao's thoughts on Andrew Wiles proving Fermat's Last Theorem."
-    },
-    {
-      "question": "did I ask about Tao thoughts on this",
-      "answer": "Yes, you did ask about Terence Tao's thoughts on Andrew Wiles proving Fermat's Last Theorem."
+      "answer": "Your last question was, \"who is the guest?\""
     }
   ],
-  "last_updated": "2025-09-05T22:56:54.064205"
+  "last_updated": "2025-09-05T23:05:23.215931"
 }
