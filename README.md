@@ -20,26 +20,25 @@ git clone <repository-url>
 cd transcriptor
 ```
 
-2. Create a virtual environment:
+2. Install prerequisites:
+- ffmpeg (required by yt-dlp/pydub)
+  - macOS: `brew install ffmpeg`
+  - Debian/Ubuntu: `sudo apt-get update && sudo apt-get install -y ffmpeg`
+  - Windows: download from `https://ffmpeg.org/download.html` and add to PATH
+- uv (fast Python package manager)
+  - macOS: `brew install uv`
+  - Any OS: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+3. Install dependencies with uv:
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+uv sync
 ```
 
-3. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-4. Set up your API keys by copying the example environment file:
-```bash
-cp .env.example .env
-```
-
-5. Edit `.env` and add your API keys:
+4. Create `.env` and add your API keys:
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
-ANTHROPIC_API_KEY=your_anthropic_api_key_here  # Optional, for Claude summaries
+# Optional, for Claude summaries
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ```
 
 ## Usage
@@ -47,7 +46,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here  # Optional, for Claude summaries
 ### Basic Transcription and Summary
 
 ```bash
-./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Quick Question Mode
@@ -55,12 +54,12 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here  # Optional, for Claude summaries
 Ask a single question about the video without entering interactive mode:
 
 ```bash
-./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID" "What is the main topic discussed?"
+uv run ./yt_transcriber_chunked.py "https://www.youtube.com/watch?v=VIDEO_ID" "What is the main topic discussed?"
 ```
 
 Or use the explicit flag:
 ```bash
-./yt_transcriber_chunked.py --ask "What are the key points?" "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./yt_transcriber_chunked.py --ask "What are the key points?" "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Interactive Q&A Mode
@@ -68,7 +67,7 @@ Or use the explicit flag:
 Enter an interactive session to ask multiple questions:
 
 ```bash
-./yt_transcriber_chunked.py --qa "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./yt_transcriber_chunked.py --qa "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Transcript Only
@@ -76,13 +75,13 @@ Enter an interactive session to ask multiple questions:
 Get just the raw transcript without summarization:
 
 ```bash
-./yt_transcriber_chunked.py --transcript-only "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run ./yt_transcriber_chunked.py --transcript-only "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Advanced Options
 
 ```bash
-./yt_transcriber_chunked.py \
+uv run ./yt_transcriber_chunked.py \
   --provider anthropic \
   --detail detailed \
   --language es \
@@ -158,20 +157,20 @@ The tool handles large audio files automatically:
 
 ### Basic Usage
 ```bash
-# Simple summary
-./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ"
+# Simple summary (uv will ensure deps are available)
+uv run ./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ"
 
 # Quick question
-./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ" "What is this video about?"
+uv run ./yt_transcriber_chunked.py "https://youtu.be/dQw4w9WgXcQ" "What is this video about?"
 
 # Interactive Q&A
-./yt_transcriber_chunked.py --qa "https://youtu.be/dQw4w9WgXcQ"
+uv run ./yt_transcriber_chunked.py --qa "https://youtu.be/dQw4w9WgXcQ"
 ```
 
 ### Advanced Usage
 ```bash
 # Detailed summary with Anthropic, Spanish transcription
-./yt_transcriber_chunked.py \
+uv run ./yt_transcriber_chunked.py \
   --provider anthropic \
   --detail detailed \
   --language es \
@@ -179,7 +178,7 @@ The tool handles large audio files automatically:
   "https://youtu.be/dQw4w9WgXcQ"
 
 # Just get the transcript
-./yt_transcriber_chunked.py --transcript-only "https://youtu.be/dQw4w9WgXcQ"
+uv run ./yt_transcriber_chunked.py --transcript-only "https://youtu.be/dQw4w9WgXcQ"
 ```
 
 ## Error Handling
@@ -201,6 +200,10 @@ The tool includes comprehensive error handling for:
 - `click` - Command line interface
 - `rich` - Beautiful terminal output
 - `python-dotenv` - Environment variable management
+
+### Notes
+- Dependencies are managed via `uv` using `pyproject.toml`. Use `uv sync` to install and `uv run` to execute without manually activating a virtual environment.
+- Ensure `ffmpeg` is installed and available in your PATH; required for audio extraction/conversion.
 
 ## License
 
