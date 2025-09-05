@@ -507,6 +507,7 @@ Transcript:
 
 @click.command()
 @click.argument('video_url')
+@click.argument('question', required=False)  # Optional second argument for shorthand
 @click.option('--api-key', help='OpenAI API key for transcription and summarization')
 @click.option('--language', help='Language code for transcription (e.g., en, es, fr)')
 @click.option('--detail', type=click.Choice(['brief', 'medium', 'detailed']), 
@@ -519,7 +520,12 @@ Transcript:
 @click.option('--show-temp-dir', is_flag=True, help='Show temp directory location and preserve it')
 @click.option('--qa', is_flag=True, help='Interactive Q&A mode - ask questions about the video')
 @click.option('--ask', help='Quick question mode - get a single answer without interaction')
-def main(video_url, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask):
+def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask):
+    # Detect shorthand syntax: if question is provided without --ask flag, treat it as --ask
+    if question and not ask and not qa and not transcript_only:
+        ask = question
+        question = None  # Clear to avoid confusion
+    
     # Validate options
     if qa and transcript_only:
         console.print("[red]Error: Cannot use --qa and --transcript-only together[/red]")
