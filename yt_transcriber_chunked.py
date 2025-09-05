@@ -619,6 +619,7 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
             
             video_info = None
             transcript = None
+            summaries_cache = {}
             if cache_file:
                 progress.update(task, description="Loading cached data...")
                 try:
@@ -627,6 +628,7 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                     
                     transcript = cached_data.get('transcript', '')
                     video_info = cached_data.get('video_info', {})
+                    summaries_cache = cached_data.get('summaries', {})
                     
                     console.print(f"[green]✓ Using cached transcript and video info from {cache_file}[/green]")
                 except Exception as e:
@@ -659,6 +661,7 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                                                    progress_task=task, progress=progress)
             
             console.print(f"[green]✓ Transcription complete ({len(transcript)} characters)[/green]")
+            new_summary_value = None
             
             if ask:
                 # Quick answer mode - no session, no interaction
@@ -701,12 +704,23 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 else:
                     console.print("[yellow]Transcript is too long to display. Saving to file...[/yellow]")
             else:
-                # Summarize transcript
-                progress.update(task, description="Generating summary...")
-                summarizer = Summarizer(api_key=api_key, provider=provider)
-                summary = summarizer.summarize(transcript, detail_level=detail)
-                result = summary
-                console.print(Panel(summary, title="Summary", border_style="green"))
+                # Summarize transcript (use cache if available)
+                cached_summary = None
+                if isinstance(summaries_cache, dict):
+                    provider_map = summaries_cache.get(provider, {})
+                    if isinstance(provider_map, dict):
+                        cached_summary = provider_map.get(detail)
+                if cached_summary:
+                    result = cached_summary
+                    console.print(f"[green]✓ Using cached summary ({provider}:{detail})[/green]")
+                    console.print(Panel(cached_summary, title="Summary", border_style="green"))
+                else:
+                    progress.update(task, description="Generating summary...")
+                    summarizer = Summarizer(api_key=api_key, provider=provider)
+                    summary = summarizer.summarize(transcript, detail_level=detail)
+                    result = summary
+                    new_summary_value = summary
+                    console.print(Panel(summary, title="Summary", border_style="green"))
             
             # Always save the transcript and video info for reuse (if we just transcribed it)
             if not cache_file:
@@ -725,10 +739,16 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                         pass  # If we can't read it, we'll overwrite
                 
                 # Merge new transcript data with existing QA data
+                summaries_map = existing_data.get('summaries', {})
+                if new_summary_value is not None:
+                    if provider not in summaries_map or not isinstance(summaries_map.get(provider), dict):
+                        summaries_map[provider] = {}
+                    summaries_map[provider][detail] = new_summary_value
                 cached_data = {
                     'video_info': video_info,
                     'transcript': transcript,
                     'qa_history': existing_data.get('qa_history', []),
+                    'summaries': summaries_map,
                     'last_updated': existing_data.get('last_updated')
                 }
                 
@@ -741,6 +761,25 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                     console.print(f"[green]✓ Transcript and video info cached in {cache_file}[/green]")
                 except Exception as e:
                     console.print(f"[yellow]Warning: Could not save cached data: {e}[/yellow]")
+
+            # If we used an existing cache file and generated a new summary, persist it
+            if cache_file and new_summary_value is not None:
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+                summaries = data.get('summaries', {})
+                if provider not in summaries or not isinstance(summaries.get(provider), dict):
+                    summaries[provider] = {}
+                summaries[provider][detail] = new_summary_value
+                data['summaries'] = summaries
+                try:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
+                        json.dump(data, f, indent=2, ensure_ascii=False)
+                    console.print(f"[dim]✓ Summary cached ({provider}:{detail})[/dim]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not save summary cache: {e}[/yellow]")
             
             # Save output if requested (skip for Q&A mode as it handles its own saving)
             if not qa and (output or (transcript_only and len(transcript) > 5000)):
