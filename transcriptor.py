@@ -22,6 +22,15 @@ load_dotenv()
 
 console = Console()
 
+# Global configuration for model names and generation parameters
+# Can be overridden via environment variables
+LLM_TEMPERATURE = float(os.getenv("TRANSCRIPTOR_LLM_TEMPERATURE", "0.3"))
+LLM_MAX_TOKENS = int(os.getenv("TRANSCRIPTOR_LLM_MAX_TOKENS", "3000"))
+
+OPENAI_CHAT_MODEL = os.getenv("TRANSCRIPTOR_OPENAI_CHAT_MODEL", "gpt-4o-mini")
+OPENAI_WHISPER_MODEL = os.getenv("TRANSCRIPTOR_OPENAI_WHISPER_MODEL", "whisper-1")
+ANTHROPIC_MODEL = os.getenv("TRANSCRIPTOR_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
+
 def sanitize_filename(title: str, max_length: int = 50) -> str:
     """Sanitize video title for use in filename"""
     if not title:
@@ -164,7 +173,7 @@ class ChunkedWhisperTranscriber:
         try:
             with open(audio_file, 'rb') as audio:
                 params = {
-                    'model': 'whisper-1',
+                    'model': OPENAI_WHISPER_MODEL,
                     'file': audio,
                     'response_format': 'text',
                 }
@@ -291,21 +300,21 @@ Focus only on the main topic and conclusion.""",
     
     def _summarize_openai(self, prompt: str) -> str:
         response = self.client.chat.completions.create(
-            model='gpt-4o-mini',
+            model=OPENAI_CHAT_MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant that creates clear, structured summaries of video transcripts."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
-            max_tokens=2000
+            temperature=LLM_TEMPERATURE,
+            max_tokens=LLM_MAX_TOKENS
         )
         return response.choices[0].message.content
     
     def _summarize_anthropic(self, prompt: str) -> str:
         response = self.client.messages.create(
-            model='claude-3-5-sonnet-20241022',
-            max_tokens=2000,
-            temperature=0.3,
+            model=ANTHROPIC_MODEL,
+            max_tokens=LLM_MAX_TOKENS,
+            temperature=LLM_TEMPERATURE,
             system="You are a helpful assistant that creates clear, structured summaries of video transcripts.",
             messages=[{"role": "user", "content": prompt}]
         )
@@ -363,10 +372,10 @@ Transcript:
         messages.append({"role": "user", "content": question})
         
         response = self.client.chat.completions.create(
-            model='gpt-4o-mini',
+            model=OPENAI_CHAT_MODEL,
             messages=messages,
-            temperature=0.3,
-            max_tokens=2000
+            temperature=LLM_TEMPERATURE,
+            max_tokens=LLM_MAX_TOKENS
         )
         return response.choices[0].message.content
     
@@ -384,9 +393,9 @@ Transcript:
         messages.append({"role": "user", "content": question})
         
         response = self.client.messages.create(
-            model='claude-3-5-sonnet-20241022',
-            max_tokens=2000,
-            temperature=0.3,
+            model=ANTHROPIC_MODEL,
+            max_tokens=LLM_MAX_TOKENS,
+            temperature=LLM_TEMPERATURE,
             system=system_prompt,
             messages=messages
         )
