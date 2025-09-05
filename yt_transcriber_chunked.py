@@ -22,6 +22,34 @@ load_dotenv()
 
 console = Console()
 
+def sanitize_filename(title: str, max_length: int = 50) -> str:
+    """Sanitize video title for use in filename"""
+    if not title:
+        return "untitled"
+    
+    # Replace spaces with underscores
+    sanitized = title.replace(" ", "_")
+    
+    # Keep only alphanumeric, underscores, and hyphens
+    import re
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', sanitized)
+    
+    # Remove multiple consecutive underscores
+    sanitized = re.sub(r'_+', '_', sanitized)
+    
+    # Truncate to max length
+    if len(sanitized) > max_length:
+        sanitized = sanitized[:max_length]
+    
+    # Remove trailing underscores
+    sanitized = sanitized.rstrip('_')
+    
+    # If nothing left, use default
+    if not sanitized:
+        return "untitled"
+    
+    return sanitized
+
 class YouTubeAudioExtractor:
     def __init__(self):
         # Create a main temp directory for this session
@@ -369,15 +397,33 @@ Transcript:
         # Use answer_question with no history for a single response
         return self.answer_question(question, transcript, video_info, conversation_history=None)
     
-    def get_session_filename(self, video_id: str) -> str:
+    def get_session_filename(self, video_id: str, title: str = None) -> str:
         """Get the standard session filename for a video ID"""
-        return os.path.join(self.sessions_dir, f"{video_id}_qa.json")
+        if title:
+            sanitized_title = sanitize_filename(title)
+            return os.path.join(self.sessions_dir, f"{video_id}_{sanitized_title}_qa.json")
+        else:
+            # Fallback to old format
+            return os.path.join(self.sessions_dir, f"{video_id}_qa.json")
     
-    def load_session(self, video_id: str) -> bool:
+    def load_session(self, video_id: str, title: str = None) -> bool:
         """Load existing Q&A session if it exists"""
         import json
-        session_file = self.get_session_filename(video_id)
         
+        # Try new format first (with title)
+        if title:
+            session_file = self.get_session_filename(video_id, title)
+            if os.path.exists(session_file):
+                try:
+                    with open(session_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                        self.qa_history = data.get('qa_history', [])
+                        return True
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not load session: {e}[/yellow]")
+        
+        # Fallback to old format (without title)
+        session_file = self.get_session_filename(video_id)
         if os.path.exists(session_file):
             try:
                 with open(session_file, 'r', encoding='utf-8') as f:
@@ -386,6 +432,7 @@ Transcript:
                     return True
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not load session: {e}[/yellow]")
+        
         return False
     
     def save_session_json(self, video_id: str, video_info: dict):
@@ -397,7 +444,8 @@ Transcript:
             return
         
         os.makedirs(self.sessions_dir, exist_ok=True)
-        session_file = self.get_session_filename(video_id)
+        title = video_info.get('title', '')
+        session_file = self.get_session_filename(video_id, title)
         
         data = {
             'video_info': video_info,
@@ -414,8 +462,10 @@ Transcript:
     def interactive_session(self, transcript: str, video_info: dict, video_id: str):
         """Run an interactive Q&A session"""
         
+        title = video_info.get('title', '')
+        
         # Check for existing session
-        if self.load_session(video_id):
+        if self.load_session(video_id, title):
             console.print(f"[green]✓ Found existing Q&A session with {len(self.qa_history)} previous exchanges[/green]")
             continue_session = Prompt.ask("Continue previous session?", choices=["yes", "no"], default="yes")
             if continue_session == "no":
@@ -454,12 +504,12 @@ Transcript:
                     # Always save JSON session
                     self.save_session_json(video_id, video_info)
                     console.print("[yellow]Ending Q&A session...[/yellow]")
-                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
+                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id, title)}[/green]")
                     break
                 
                 elif question.lower() == '/save':
                     self.save_session_json(video_id, video_info)
-                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id)}[/green]")
+                    console.print(f"[green]✓ Session saved to {self.get_session_filename(video_id, title)}[/green]")
                     continue
                 
                 elif question.lower() == '/clear':
@@ -553,8 +603,27 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 sys.exit(1)
             
             # Check for cached transcript
-            transcript_file = f"transcripts/{video_id}_transcript.txt"
-            if os.path.exists(transcript_file):
+            # First try to get video info for title-based filename
+            transcript_file = None
+            try:
+                with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
+                    temp_video_info = ydl.extract_info(video_url, download=False)
+                    video_title = temp_video_info.get('title', '')
+                    if video_title:
+                        sanitized_title = sanitize_filename(video_title)
+                        new_format_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
+                        if os.path.exists(new_format_file):
+                            transcript_file = new_format_file
+            except:
+                pass
+            
+            # If no new format file found, check for old format
+            if not transcript_file:
+                old_format_file = f"transcripts/{video_id}_transcript.txt"
+                if os.path.exists(old_format_file):
+                    transcript_file = old_format_file
+            
+            if transcript_file:
                 progress.update(task, description="Loading cached transcript...")
                 with open(transcript_file, 'r', encoding='utf-8') as f:
                     transcript = f.read()
@@ -644,15 +713,27 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 console.print(Panel(summary, title="Summary", border_style="green"))
             
             # Always save the transcript for reuse (if we just transcribed it)
-            if not os.path.exists(transcript_file):
+            if not transcript_file or not os.path.exists(transcript_file):
                 os.makedirs("transcripts", exist_ok=True)
+                # Generate the proper filename with title if we have video_info
+                if 'title' in video_info and video_info['title']:
+                    sanitized_title = sanitize_filename(video_info['title'])
+                    transcript_file = f"transcripts/{video_id}_{sanitized_title}_transcript.txt"
+                else:
+                    # Fallback to old format if no title
+                    transcript_file = f"transcripts/{video_id}_transcript.txt"
                 with open(transcript_file, 'w', encoding='utf-8') as f:
                     f.write(transcript)
                 console.print(f"[green]✓ Transcript cached in {transcript_file}[/green]")
             
             # Save output if requested (skip for Q&A mode as it handles its own saving)
             if not qa and (output or (transcript_only and len(transcript) > 5000)):
-                output_file = output or f"{video_info['title'][:50]}_{'transcript' if transcript_only else 'summary'}.md"
+                if output:
+                    output_file = output
+                else:
+                    sanitized_title = sanitize_filename(video_info.get('title', 'untitled'))
+                    file_type = 'transcript' if transcript_only else 'summary'
+                    output_file = f"{video_id}_{sanitized_title}_{file_type}.md"
                 progress.update(task, description="Saving to file...")
                 with open(output_file, 'w', encoding='utf-8') as f:
                     f.write(f"# {video_info['title']}\n\n")
