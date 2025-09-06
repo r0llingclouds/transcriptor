@@ -119,34 +119,48 @@ class YouTubeAudioExtractor:
             # Use the session temp directory
             output_path = os.path.join(self.session_temp_dir, '%(title)s.%(ext)s')
         
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': output_path,
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False,
-        }
+        # Try different browsers in order of preference
+        browsers_to_try = [('safari',), ('chrome',), ('firefox',)]
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(clean_url, download=True)
-            
-            # Get the actual output filename
-            filename = ydl.prepare_filename(info)
-            # Replace extension with mp3
-            audio_file = filename.rsplit('.', 1)[0] + '.mp3'
-            
-            return audio_file, {
-                'title': info.get('title', 'Unknown'),
-                'duration': info.get('duration', 0),
-                'uploader': info.get('uploader', 'Unknown'),
-                'view_count': info.get('view_count', 0),
-                'upload_date': info.get('upload_date', ''),
+        for browser in browsers_to_try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+                'outtmpl': output_path,
+                'quiet': True,
+                'no_warnings': True,
+                'extract_flat': False,
+                'cookiesfrombrowser': browser,  # Try different browsers
+                'ignoreerrors': False,
+                'age_limit': None,
+                'geo_bypass': True,  # Try to bypass geographic restrictions
             }
+            
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(clean_url, download=True)
+                    
+                    # Get the actual output filename
+                    filename = ydl.prepare_filename(info)
+                    # Replace extension with mp3
+                    audio_file = filename.rsplit('.', 1)[0] + '.mp3'
+                    
+                    return audio_file, {
+                        'title': info.get('title', 'Unknown'),
+                        'duration': info.get('duration', 0),
+                        'uploader': info.get('uploader', 'Unknown'),
+                        'view_count': info.get('view_count', 0),
+                        'upload_date': info.get('upload_date', ''),
+                    }
+            except Exception as e:
+                if browser == browsers_to_try[-1]:
+                    # If all browsers failed, raise the last exception
+                    raise
+                continue
 
 
 class ChunkedWhisperTranscriber:
