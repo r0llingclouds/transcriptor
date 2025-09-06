@@ -18,6 +18,13 @@ from rich.prompt import Prompt
 from rich.markdown import Markdown
 from dotenv import load_dotenv
 
+# Import enhanced formatting functions
+try:
+    from format_summary import print_summary_enhanced, print_summary_cards
+except ImportError:
+    print_summary_enhanced = None
+    print_summary_cards = None
+
 load_dotenv()
 
 console = Console()
@@ -588,7 +595,9 @@ Transcript:
 @click.option('--show-temp-dir', is_flag=True, help='Show temp directory location and preserve it')
 @click.option('--qa', is_flag=True, help='Interactive Q&A mode - ask questions about the video')
 @click.option('--ask', help='Quick question mode - get a single answer without interaction')
-def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask):
+@click.option('--display-format', type=click.Choice(['standard', 'enhanced', 'cards']), 
+              default='enhanced', help='Display format for summaries')
+def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask, display_format):
     # Detect shorthand syntax: if question is provided without --ask flag, treat it as --ask
     if question and not ask and not qa and not transcript_only:
         ask = question
@@ -725,14 +734,26 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 if cached_summary:
                     result = cached_summary
                     console.print(f"[green]✓ Using cached summary ({provider}:{detail})[/green]")
-                    console.print(Panel(cached_summary, title="Summary", border_style="green"))
+                    # Use selected display format
+                    if display_format == 'cards' and print_summary_cards:
+                        print_summary_cards(cached_summary, video_info)
+                    elif display_format == 'enhanced' and print_summary_enhanced:
+                        print_summary_enhanced(cached_summary, "Summary", video_info)
+                    else:
+                        console.print(Panel(cached_summary, title="Summary", border_style="green"))
                 else:
                     progress.update(task, description="Generating summary...")
                     summarizer = Summarizer(api_key=api_key, provider=provider)
                     summary = summarizer.summarize(transcript, detail_level=detail)
                     result = summary
                     new_summary_value = summary
-                    console.print(Panel(summary, title="Summary", border_style="green"))
+                    # Use selected display format
+                    if display_format == 'cards' and print_summary_cards:
+                        print_summary_cards(summary, video_info)
+                    elif display_format == 'enhanced' and print_summary_enhanced:
+                        print_summary_enhanced(summary, "Summary", video_info)
+                    else:
+                        console.print(Panel(summary, title="Summary", border_style="green"))
             
             # Always save the transcript and video info for reuse (if we just transcribed it)
             if not cache_file:
