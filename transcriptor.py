@@ -680,6 +680,47 @@ Transcript:
                 console.print(f"[red]Error: {str(e)}[/red]")
 
 
+def display_qa_history(qa_history: list, video_info: dict) -> None:
+    """Display Q&A history in a formatted way"""
+    from rich.text import Text
+    from rich.console import Group
+    from rich.markdown import Markdown
+    
+    if not qa_history:
+        console.print(f"[yellow]No Q&A history found for: {video_info.get('title', 'Unknown')}[/yellow]")
+        return
+    
+    # Display header
+    console.print(Panel.fit(
+        f"[bold green]Q&A History[/bold green]\n"
+        f"Video: {video_info.get('title', 'Unknown')}\n"
+        f"Total exchanges: {len(qa_history)}",
+        border_style="green"
+    ))
+    
+    # Display each Q&A pair
+    for i, qa in enumerate(qa_history, 1):
+        question_text = Text()
+        question_text.append(f"Q{i}: ", style="bold cyan")
+        question_text.append(qa['question'])
+        
+        qa_content = Group(
+            question_text,
+            Text(),  # Empty line
+            Text(f"A{i}: ", style="bold green"),
+            Markdown(qa['answer'])
+        )
+        
+        console.print(Panel(
+            qa_content,
+            title=f"[dim]Exchange {i}/{len(qa_history)}[/dim]",
+            border_style="dim"
+        ))
+        
+        if i < len(qa_history):
+            console.print()  # Add spacing between Q&A pairs
+
+
 def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
     """Browse cached videos and select one for Q&A mode"""
     import glob
@@ -786,15 +827,58 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
         console.print("[yellow]Exiting...[/yellow]")
         return
     
-    console.print(f"\n[green]✓ Loading \"{selected['title']}\"...[/green]")
+    # Show submenu for selected video
+    console.print(f"\n[green]✓ Selected: \"{selected['title']}\"[/green]")
     
-    # Start Q&A session with cached data
-    qa_handler = QAHandler(api_key=api_key, provider=provider)
-    qa_handler.interactive_session(
-        transcript=selected['transcript'],
-        video_info=selected['video_info'],
-        video_id=selected['video_id']
-    )
+    # Load Q&A history for the selected video
+    qa_history = []
+    cache_file = selected['file']
+    try:
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            qa_history = data.get('qa_history', [])
+    except Exception:
+        pass
+    
+    while True:
+        # Create submenu options
+        qa_count_text = f" ({len(qa_history)} exchanges)" if qa_history else " (no history)"
+        
+        action_choices = [
+            questionary.Choice(title=f"📖 View Q&A History{qa_count_text}", value="history"),
+            questionary.Choice(title="💬 Start Q&A Session", value="qa"),
+            questionary.Choice(title="← Back to video list", value="back")
+        ]
+        
+        console.print("\n[bold cyan]What would you like to do?[/bold cyan]")
+        action = questionary.select(
+            "",
+            choices=action_choices,
+            use_arrow_keys=True,
+            instruction="(Use arrow keys)",
+        ).ask()
+        
+        if action == "back" or action is None:
+            # Go back to main menu by restarting the function
+            return browse_cached_videos(api_key, provider)
+        
+        elif action == "history":
+            # Display Q&A history and exit
+            console.print()
+            display_qa_history(qa_history, selected['video_info'])
+            return
+            
+        elif action == "qa":
+            # Start Q&A session
+            console.print(f"\n[green]Starting Q&A session...[/green]")
+            qa_handler = QAHandler(api_key=api_key, provider=provider)
+            qa_handler.interactive_session(
+                transcript=selected['transcript'],
+                video_info=selected['video_info'],
+                video_id=selected['video_id']
+            )
+            # After Q&A session ends, return to main menu
+            return
 
 
 @click.command()
@@ -916,8 +1000,6 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 progress.update(task, description="Loading Q&A history...")
                 import glob
                 import json
-                from rich.text import Text
-                from rich.console import Group
                 
                 # Find cached file for this video
                 cached_files = glob.glob(f"transcripts/{video_id}_*.json")
@@ -937,34 +1019,8 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                         console.print(f"[yellow]No Q&A history found for: {video_info.get('title', 'Unknown')}[/yellow]")
                         sys.exit(0)
                     
-                    # Display all Q&A pairs
-                    console.print(Panel.fit(
-                        f"[bold green]Q&A History[/bold green]\n"
-                        f"Video: {video_info.get('title', 'Unknown')}\n"
-                        f"Total exchanges: {len(qa_history)}",
-                        border_style="green"
-                    ))
-                    
-                    for i, qa in enumerate(qa_history, 1):
-                        question_text = Text()
-                        question_text.append(f"Q{i}: ", style="bold cyan")
-                        question_text.append(qa['question'])
-                        
-                        qa_content = Group(
-                            question_text,
-                            Text(),  # Empty line
-                            Text(f"A{i}: ", style="bold green"),
-                            Markdown(qa['answer'])
-                        )
-                        
-                        console.print(Panel(
-                            qa_content,
-                            title=f"[dim]Exchange {i}/{len(qa_history)}[/dim]",
-                            border_style="dim"
-                        ))
-                        
-                        if i < len(qa_history):
-                            console.print()  # Add spacing between Q&A pairs
+                    # Display all Q&A pairs using the reusable function
+                    display_qa_history(qa_history, video_info)
                     
                     progress.stop()
                     sys.exit(0)
