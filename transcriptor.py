@@ -847,7 +847,8 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
         action_choices = [
             questionary.Choice(title=f"📖 View Q&A History{qa_count_text}", value="history"),
             questionary.Choice(title="💬 Start Q&A Session", value="qa"),
-            questionary.Choice(title="← Back to video list", value="back")
+            questionary.Choice(title="← Back to video list", value="back"),
+            questionary.Choice(title="✕ Exit", value="exit")
         ]
         
         console.print("\n[bold cyan]What would you like to do?[/bold cyan]")
@@ -858,15 +859,47 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
             instruction="(Use arrow keys)",
         ).ask()
         
-        if action == "back" or action is None:
+        if action == "back":
             # Go back to main menu by restarting the function
             return browse_cached_videos(api_key, provider)
         
+        elif action == "exit" or action is None:
+            console.print("[yellow]Exiting...[/yellow]")
+            return
+        
         elif action == "history":
-            # Display Q&A history and exit
+            # Display Q&A history
             console.print()
             display_qa_history(qa_history, selected['video_info'])
-            return
+            
+            # Show simple menu after history
+            console.print("\n[bold cyan]What would you like to do next?[/bold cyan]")
+            post_history_choices = [
+                questionary.Choice(title="💬 Start Q&A Session", value="qa"),
+                questionary.Choice(title="← Exit", value="exit")
+            ]
+            
+            post_action = questionary.select(
+                "",
+                choices=post_history_choices,
+                use_arrow_keys=True,
+                instruction="(Use arrow keys)",
+            ).ask()
+            
+            if post_action == "qa":
+                # Start Q&A session
+                console.print(f"\n[green]Starting Q&A session...[/green]")
+                qa_handler = QAHandler(api_key=api_key, provider=provider)
+                qa_handler.interactive_session(
+                    transcript=selected['transcript'],
+                    video_info=selected['video_info'],
+                    video_id=selected['video_id']
+                )
+                return
+            else:
+                # Exit
+                console.print("[yellow]Exiting...[/yellow]")
+                return
             
         elif action == "qa":
             # Start Q&A session
