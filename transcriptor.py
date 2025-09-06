@@ -681,7 +681,7 @@ Transcript:
 
 
 @click.command()
-@click.argument('video_url')
+@click.argument('video_url', required=False)  # Make video_url optional for --show-history
 @click.argument('question', required=False)  # Optional second argument for shorthand
 @click.option('--api-key', help='OpenAI API key for transcription and summarization')
 @click.option('--language', help='Language code for transcription (e.g., en, es, fr)')
@@ -697,7 +697,58 @@ Transcript:
 @click.option('--ask', help='Quick question mode - get a single answer without interaction')
 @click.option('--display-format', type=click.Choice(['standard', 'enhanced', 'cards']), 
               default='enhanced', help='Display format for summaries')
-def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask, display_format):
+@click.option('--show-history', is_flag=True, help='Show all Q&A pairs from history')
+def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask, display_format, show_history):
+    # Handle --show-history without video URL (list all available histories)
+    if show_history and not video_url:
+        import glob
+        import json
+        
+        console.print(Panel.fit(
+            "[bold green]Available Q&A Histories[/bold green]",
+            border_style="green"
+        ))
+        
+        cached_files = glob.glob("transcripts/*.json")
+        if not cached_files:
+            console.print("[yellow]No Q&A histories found[/yellow]")
+            sys.exit(0)
+        
+        videos_with_qa = []
+        for cache_file in cached_files:
+            try:
+                with open(cache_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                qa_history = data.get('qa_history', [])
+                if qa_history:
+                    video_info = data.get('video_info', {})
+                    videos_with_qa.append({
+                        'title': video_info.get('title', 'Unknown'),
+                        'url': f"https://www.youtube.com/watch?v={cache_file.split('/')[-1].split('_')[0]}",
+                        'qa_count': len(qa_history),
+                        'file': cache_file
+                    })
+            except Exception:
+                continue
+        
+        if not videos_with_qa:
+            console.print("[yellow]No videos with Q&A history found[/yellow]")
+            sys.exit(0)
+        
+        for video in videos_with_qa:
+            console.print(f"\n[bold cyan]{video['title']}[/bold cyan]")
+            console.print(f"  URL: [dim]{video['url']}[/dim]")
+            console.print(f"  Q&A exchanges: [green]{video['qa_count']}[/green]")
+        
+        console.print(f"\n[dim]Total: {len(videos_with_qa)} video(s) with Q&A history[/dim]")
+        console.print("\n[yellow]Tip: Use the URL with --show-history to view specific Q&A history[/yellow]")
+        sys.exit(0)
+    
+    # Require video_url for all other operations
+    if not video_url:
+        console.print("[red]Error: VIDEO_URL is required (except when using --show-history alone)[/red]")
+        sys.exit(1)
+    
     # Detect shorthand syntax: if question is provided without --ask flag, treat it as --ask
     if question and not ask and not qa and not transcript_only:
         ask = question
@@ -710,6 +761,10 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
     
     if ask and (qa or transcript_only):
         console.print("[red]Error: Cannot use --ask with --qa or --transcript-only[/red]")
+        sys.exit(1)
+    
+    if show_history and (qa or transcript_only or ask):
+        console.print("[red]Error: Cannot use --show-history with other modes[/red]")
         sys.exit(1)
     
     audio_file = None
@@ -728,6 +783,68 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
             if not video_id:
                 console.print("[red]Error: Could not extract video ID from URL[/red]")
                 sys.exit(1)
+            
+            # Handle --show-history mode early
+            if show_history:
+                progress.update(task, description="Loading Q&A history...")
+                import glob
+                import json
+                from rich.text import Text
+                from rich.console import Group
+                
+                # Find cached file for this video
+                cached_files = glob.glob(f"transcripts/{video_id}_*.json")
+                if not cached_files:
+                    console.print(f"[yellow]No cached data found for video ID: {video_id}[/yellow]")
+                    sys.exit(0)
+                
+                cache_file = cached_files[0]
+                try:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    
+                    qa_history = data.get('qa_history', [])
+                    video_info = data.get('video_info', {})
+                    
+                    if not qa_history:
+                        console.print(f"[yellow]No Q&A history found for: {video_info.get('title', 'Unknown')}[/yellow]")
+                        sys.exit(0)
+                    
+                    # Display all Q&A pairs
+                    console.print(Panel.fit(
+                        f"[bold green]Q&A History[/bold green]\n"
+                        f"Video: {video_info.get('title', 'Unknown')}\n"
+                        f"Total exchanges: {len(qa_history)}",
+                        border_style="green"
+                    ))
+                    
+                    for i, qa in enumerate(qa_history, 1):
+                        question_text = Text()
+                        question_text.append(f"Q{i}: ", style="bold cyan")
+                        question_text.append(qa['question'])
+                        
+                        qa_content = Group(
+                            question_text,
+                            Text(),  # Empty line
+                            Text(f"A{i}: ", style="bold green"),
+                            Markdown(qa['answer'])
+                        )
+                        
+                        console.print(Panel(
+                            qa_content,
+                            title=f"[dim]Exchange {i}/{len(qa_history)}[/dim]",
+                            border_style="dim"
+                        ))
+                        
+                        if i < len(qa_history):
+                            console.print()  # Add spacing between Q&A pairs
+                    
+                    progress.stop()
+                    sys.exit(0)
+                    
+                except Exception as e:
+                    console.print(f"[red]Error loading Q&A history: {e}[/red]")
+                    sys.exit(1)
             
             # Check for cached transcript using video ID only (no title extraction needed)
             progress.update(task, description="Checking for cached transcript...")
