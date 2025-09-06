@@ -451,6 +451,61 @@ Transcript:
         
         return False
     
+    def append_qa_to_history(self, question: str, answer: str, video_id: str, video_info: dict) -> int:
+        """Append a single Q&A to the history and save. Returns total QA count."""
+        import json
+        from datetime import datetime
+        import glob
+        
+        os.makedirs(self.sessions_dir, exist_ok=True)
+        title = video_info.get('title', '')
+        
+        # Find the cache file
+        session_file = None
+        if title:
+            session_file = self.get_session_filename(video_id, title)
+        
+        # If not found, try glob search
+        if not session_file or not os.path.exists(session_file):
+            cache_files = glob.glob(f"transcripts/{video_id}_*.json")
+            if cache_files:
+                session_file = cache_files[0]
+            else:
+                # Create new file if none exists
+                session_file = self.get_session_filename(video_id, title)
+        
+        # Load existing data
+        existing_data = {}
+        existing_qa_history = []
+        if os.path.exists(session_file):
+            try:
+                with open(session_file, 'r', encoding='utf-8') as f:
+                    existing_data = json.load(f)
+                    existing_qa_history = existing_data.get('qa_history', [])
+            except Exception as e:
+                console.print(f"[yellow]Warning: Could not load existing cache: {e}[/yellow]")
+        
+        # Append new Q&A
+        existing_qa_history.append({"question": question, "answer": answer})
+        
+        # Merge with existing data
+        merged_data = existing_data.copy()
+        merged_data.update({
+            'video_info': existing_data.get('video_info', video_info),
+            'transcript': existing_data.get('transcript', ''),
+            'qa_history': existing_qa_history,
+            'last_updated': datetime.now().isoformat()
+        })
+        
+        # Save back
+        try:
+            with open(session_file, 'w', encoding='utf-8') as f:
+                json.dump(merged_data, f, indent=2, ensure_ascii=False)
+            return len(existing_qa_history)
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not save Q&A: {e}[/yellow]")
+            return 0
+    
     def save_session_json(self, video_id: str, video_info: dict):
         """Save Q&A session by merging with existing unified cache file"""
         import json
@@ -465,12 +520,21 @@ Transcript:
         
         # Try to load existing cache data first
         existing_data = {}
+        existing_qa_history = []
         if os.path.exists(session_file):
             try:
                 with open(session_file, 'r', encoding='utf-8') as f:
                     existing_data = json.load(f)
+                    # Get existing QA history that might not be in our current session
+                    existing_qa_history = existing_data.get('qa_history', [])
             except Exception as e:
                 console.print(f"[yellow]Warning: Could not load existing cache for QA merge: {e}[/yellow]")
+        
+        # Merge histories: keep all existing QAs that aren't in our current session
+        # This handles the case where quick questions were added outside this session
+        # We assume self.qa_history contains ALL history if loaded at start
+        # So we just use self.qa_history as the full history
+        merged_qa_history = self.qa_history
         
         # Merge QA data with existing cache, preserving any existing fields like summaries
         if not isinstance(existing_data, dict):
@@ -479,14 +543,14 @@ Transcript:
         merged_data.update({
             'video_info': existing_data.get('video_info', video_info),
             'transcript': existing_data.get('transcript', ''),
-            'qa_history': self.qa_history,
+            'qa_history': merged_qa_history,
             'last_updated': datetime.now().isoformat()
         })
         
         try:
             with open(session_file, 'w', encoding='utf-8') as f:
                 json.dump(merged_data, f, indent=2, ensure_ascii=False)
-            console.print(f"[dim]✓ QA history saved ({len(self.qa_history)} exchanges)[/dim]")
+            console.print(f"[dim]✓ QA history saved ({len(merged_qa_history)} exchanges)[/dim]")
         except Exception as e:
             console.print(f"[yellow]Warning: Could not save session: {e}[/yellow]")
     
@@ -721,10 +785,18 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
             new_summary_value = None
             
             if ask:
-                # Quick answer mode - no session, no interaction
+                # Quick answer mode - saves to history like interactive sessions
                 progress.update(task, description="Getting answer...")
                 qa_handler = QAHandler(api_key=api_key, provider=provider)
+                
+                # Load existing history to show context
+                qa_handler.load_session(video_id, video_info.get('title'))
+                
+                # Get the answer
                 answer = qa_handler.quick_answer(ask, transcript, video_info)
+                
+                # Save Q&A to history
+                total_qa_count = qa_handler.append_qa_to_history(ask, answer, video_id, video_info)
                 
                 # Display Q&A with proper markdown rendering
                 from rich.text import Text
@@ -747,13 +819,16 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                     border_style="bright_cyan"
                 ))
                 
+                # Show that it was saved to history
+                console.print(f"[green]✓ Added to Q&A history ({total_qa_count} total exchanges)[/green]")
+                
                 # Optionally save to file if output specified
                 if output:
                     with open(output, 'w', encoding='utf-8') as f:
                         f.write(f"# Quick Q&A: {video_info['title']}\n\n")
                         f.write(f"**Question:** {ask}\n\n")
                         f.write(f"**Answer:** {answer}\n")
-                    console.print(f"[green]✓ Answer saved to {output}[/green]")
+                    console.print(f"[green]✓ Answer also saved to {output}[/green]")
                 
                 result = None
             elif qa:
