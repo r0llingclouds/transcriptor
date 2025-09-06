@@ -501,10 +501,12 @@ Transcript:
             # Show last Q&A to refresh memory
             if self.qa_history:
                 last_qa = self.qa_history[-1]
-                console.print(Panel.fit(
-                    f"[dim]Last question:[/dim] {last_qa['question']}\n"
-                    f"[dim]Last answer:[/dim] {last_qa['answer'][:200]}...",
-                    title="Previous Context",
+                # Truncate answer if too long
+                answer_preview = last_qa['answer'][:200] + "..." if len(last_qa['answer']) > 200 else last_qa['answer']
+                console.print(Panel(
+                    f"[bold cyan]Last Question:[/bold cyan] {last_qa['question']}\n\n"
+                    f"[bold green]Last Answer:[/bold green] {answer_preview}",
+                    title="[dim]Previous Context[/dim]",
                     border_style="dim"
                 ))
         
@@ -564,11 +566,12 @@ Transcript:
                 # Auto-save session after each Q&A
                 self.save_session_json(video_id, video_info)
                 
-                # Display answer
+                # Display Q&A in merged format with colored prefixes
+                qa_display = f"[bold cyan]Question:[/bold cyan] {question}\n\n[bold green]Answer:[/bold green] {answer}"
                 console.print(Panel(
-                    Markdown(answer),
-                    title="[bold]Answer[/bold]",
-                    border_style="green"
+                    qa_display,
+                    title="[bold]Q&A[/bold]",
+                    border_style="bright_cyan"
                 ))
                 
             except KeyboardInterrupt:
@@ -690,14 +693,12 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 qa_handler = QAHandler(api_key=api_key, provider=provider)
                 answer = qa_handler.quick_answer(ask, transcript, video_info)
                 
-                console.print(Panel.fit(
-                    f"[bold]Question:[/bold] {ask}",
-                    border_style="cyan"
-                ))
+                # Merge Q&A into single panel with colored prefixes
+                qa_content = f"[bold cyan]Question:[/bold cyan] {ask}\n\n[bold green]Answer:[/bold green] {answer}"
                 console.print(Panel(
-                    answer,
-                    title="[bold]Answer[/bold]",
-                    border_style="green"
+                    qa_content,
+                    title="[bold]Q&A[/bold]",
+                    border_style="bright_cyan"
                 ))
                 
                 # Optionally save to file if output specified
