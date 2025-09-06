@@ -78,6 +78,21 @@ class YouTubeAudioExtractor:
             shutil.rmtree(self.session_temp_dir, ignore_errors=True)
     
     @staticmethod
+    def clean_youtube_url(url: str) -> str:
+        """Remove timestamp and other unnecessary parameters from YouTube URL"""
+        # For youtube.com URLs, keep only the v parameter
+        if 'youtube.com/watch' in url:
+            match = re.search(r'[?&]v=([0-9A-Za-z_-]{11})', url)
+            if match:
+                return f'https://www.youtube.com/watch?v={match.group(1)}'
+        # For youtu.be URLs, remove everything after the video ID
+        elif 'youtu.be/' in url:
+            match = re.search(r'youtu\.be/([0-9A-Za-z_-]{11})', url)
+            if match:
+                return f'https://youtu.be/{match.group(1)}'
+        return url
+    
+    @staticmethod
     def extract_video_id(url: str) -> Optional[str]:
         patterns = [
             r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
@@ -97,6 +112,9 @@ class YouTubeAudioExtractor:
         return None
     
     def download_audio(self, url: str, output_path: str = None) -> tuple[str, dict]:
+        # Clean the URL to remove timestamp and other parameters
+        clean_url = self.clean_youtube_url(url)
+        
         if not output_path:
             # Use the session temp directory
             output_path = os.path.join(self.session_temp_dir, '%(title)s.%(ext)s')
@@ -115,7 +133,7 @@ class YouTubeAudioExtractor:
         }
         
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            info = ydl.extract_info(clean_url, download=True)
             
             # Get the actual output filename
             filename = ydl.prepare_filename(info)
