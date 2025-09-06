@@ -500,12 +500,26 @@ Transcript:
             console.print(f"[green]✓ Loaded existing Q&A session with {len(self.qa_history)} previous exchanges[/green]")
             # Show last Q&A to refresh memory
             if self.qa_history:
+                from rich.text import Text
+                from rich.console import Group
+                
                 last_qa = self.qa_history[-1]
                 # Truncate answer if too long
-                answer_preview = last_qa['answer'][:200] + "..." if len(last_qa['answer']) > 200 else last_qa['answer']
+                answer_preview = last_qa['answer'][:400] + "..." if len(last_qa['answer']) > 400 else last_qa['answer']
+                
+                question_text = Text()
+                question_text.append("Last Question: ", style="bold cyan")
+                question_text.append(last_qa['question'])
+                
+                prev_content = Group(
+                    question_text,
+                    Text(),
+                    Text("Last Answer: ", style="bold green"),
+                    Markdown(answer_preview)
+                )
+                
                 console.print(Panel(
-                    f"[bold cyan]Last Question:[/bold cyan] {last_qa['question']}\n\n"
-                    f"[bold green]Last Answer:[/bold green] {answer_preview}",
+                    prev_content,
                     title="[dim]Previous Context[/dim]",
                     border_style="dim"
                 ))
@@ -566,10 +580,29 @@ Transcript:
                 # Auto-save session after each Q&A
                 self.save_session_json(video_id, video_info)
                 
-                # Display Q&A in merged format with colored prefixes
-                qa_display = f"[bold cyan]Question:[/bold cyan] {question}\n\n[bold green]Answer:[/bold green] {answer}"
+                # Display Q&A with proper markdown rendering for the answer
+                from rich.text import Text
+                from rich.console import Group
+                
+                # Create question part
+                question_text = Text()
+                question_text.append("Question: ", style="bold cyan")
+                question_text.append(question)
+                
+                # Create answer part with markdown
+                answer_text = Text()
+                answer_text.append("Answer: ", style="bold green")
+                
+                # Combine question and answer with markdown support
+                qa_content = Group(
+                    question_text,
+                    Text(),  # Empty line
+                    Text("Answer: ", style="bold green"),
+                    Markdown(answer)
+                )
+                
                 console.print(Panel(
-                    qa_display,
+                    qa_content,
                     title="[bold]Q&A[/bold]",
                     border_style="bright_cyan"
                 ))
@@ -693,8 +726,21 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 qa_handler = QAHandler(api_key=api_key, provider=provider)
                 answer = qa_handler.quick_answer(ask, transcript, video_info)
                 
-                # Merge Q&A into single panel with colored prefixes
-                qa_content = f"[bold cyan]Question:[/bold cyan] {ask}\n\n[bold green]Answer:[/bold green] {answer}"
+                # Display Q&A with proper markdown rendering
+                from rich.text import Text
+                from rich.console import Group
+                
+                question_text = Text()
+                question_text.append("Question: ", style="bold cyan")
+                question_text.append(ask)
+                
+                qa_content = Group(
+                    question_text,
+                    Text(),  # Empty line
+                    Text("Answer: ", style="bold green"),
+                    Markdown(answer)
+                )
+                
                 console.print(Panel(
                     qa_content,
                     title="[bold]Q&A[/bold]",
