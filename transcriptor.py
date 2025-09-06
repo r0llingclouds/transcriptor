@@ -686,7 +686,7 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
     import json
     from datetime import datetime
     from rich.table import Table
-    from rich.prompt import IntPrompt
+    
     
     # Find all cached files
     cached_files = glob.glob("transcripts/*.json")
@@ -760,79 +760,41 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
     # Sort by last updated (most recent first)
     videos.sort(key=lambda x: x['updated'], reverse=False)
     
-    # Create and display table
-    table = Table(title="[bold green]Cached Videos[/bold green]", show_header=True, header_style="bold cyan")
-    table.add_column("#", style="cyan", width=4)
-    table.add_column("Title", style="white", max_width=40)
-    table.add_column("Duration", style="dim", width=10, justify="right")
-    table.add_column("Q&A", style="green", width=6, justify="right")
-    table.add_column("Summaries", style="yellow", width=10, justify="right")
-    table.add_column("Updated", style="dim", width=12)
+    # USE THE FUCKING MENU
+    import questionary
     
-    for i, video in enumerate(videos, 1):
-        # Truncate title if too long
-        title = video['title']
-        if len(title) > 40:
-            title = title[:37] + "..."
-        
-        # Color code Q&A count
-        qa_style = "green" if video['qa_count'] > 0 else "dim"
-        qa_text = str(video['qa_count']) if video['qa_count'] > 0 else "0"
-        
-        # Format summary count
-        summary_text = str(video['summary_count']) if video['summary_count'] > 0 else "-"
-        
-        table.add_row(
-            str(i),
-            title,
-            video['duration_str'],
-            f"[{qa_style}]{qa_text}[/{qa_style}]",
-            summary_text,
-            video['updated']
-        )
-    
-    console.print(table)
-    
-    # Show statistics
-    total_qa = sum(v['qa_count'] for v in videos)
-    total_duration = sum(v['duration'] for v in videos)
-    total_hours = total_duration // 3600
-    total_minutes = (total_duration % 3600) // 60
-    
-    console.print(f"\n[dim]Total: {len(videos)} video(s) | {total_qa} Q&A exchanges | {total_hours}h {total_minutes}m total duration[/dim]")
-    
-    # Interactive selection
     console.print("\n[bold cyan]Select a video for Q&A mode[/bold cyan]")
-    try:
-        choice = IntPrompt.ask(
-            "Enter video number (0 to exit)",
-            choices=[str(i) for i in range(len(videos) + 1)],
-            default=0,
-            show_choices=False
-        )
-        
-        if choice == 0:
-            console.print("[yellow]Exiting...[/yellow]")
-            return
-        
-        # Get selected video
-        selected = videos[choice - 1]
-        console.print(f"\n[green]✓ Loading \"{selected['title']}\"...[/green]")
-        
-        # Start Q&A session with cached data
-        qa_handler = QAHandler(api_key=api_key, provider=provider)
-        qa_handler.interactive_session(
-            transcript=selected['transcript'],
-            video_info=selected['video_info'],
-            video_id=selected['video_id']
-        )
-        
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Selection cancelled.[/yellow]")
+    
+    # Create menu choices
+    choices = []
+    for video in videos:
+        qa_text = f"({video['qa_count']} Q&A)" if video['qa_count'] > 0 else "(No Q&A)"
+        choice_text = f"{video['title'][:50]:<50} {video['duration_str']:>10}  {qa_text}"
+        choices.append(questionary.Choice(title=choice_text, value=video))
+    choices.append(questionary.Choice(title="← Exit", value="EXIT"))
+    
+    # Show the selection menu
+    selected = questionary.select(
+        "",
+        choices=choices,
+        use_arrow_keys=True,
+        use_jk_keys=False,
+        instruction="(Use arrow keys)",
+    ).ask()
+    
+    if selected is None or selected == "EXIT":
+        console.print("[yellow]Exiting...[/yellow]")
         return
-    except Exception as e:
-        console.print(f"[red]Error: {str(e)}[/red]")
-        return
+    
+    console.print(f"\n[green]✓ Loading \"{selected['title']}\"...[/green]")
+    
+    # Start Q&A session with cached data
+    qa_handler = QAHandler(api_key=api_key, provider=provider)
+    qa_handler.interactive_session(
+        transcript=selected['transcript'],
+        video_info=selected['video_info'],
+        video_id=selected['video_id']
+    )
 
 
 @click.command()
