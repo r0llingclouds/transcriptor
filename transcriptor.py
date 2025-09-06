@@ -680,6 +680,161 @@ Transcript:
                 console.print(f"[red]Error: {str(e)}[/red]")
 
 
+def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
+    """Browse cached videos and select one for Q&A mode"""
+    import glob
+    import json
+    from datetime import datetime
+    from rich.table import Table
+    from rich.prompt import IntPrompt
+    
+    # Find all cached files
+    cached_files = glob.glob("transcripts/*.json")
+    if not cached_files:
+        console.print("[yellow]No cached videos found. Process a video first with transcriptor.[/yellow]")
+        return
+    
+    # Load metadata from each file
+    videos = []
+    for cache_file in cached_files:
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            video_info = data.get('video_info', {})
+            qa_history = data.get('qa_history', [])
+            summaries = data.get('summaries', {})
+            last_updated = data.get('last_updated', '')
+            
+            # Count available summaries
+            summary_count = 0
+            for provider_summaries in summaries.values():
+                if isinstance(provider_summaries, dict):
+                    summary_count += len(provider_summaries)
+            
+            # Format duration
+            duration_seconds = video_info.get('duration', 0)
+            hours = duration_seconds // 3600
+            minutes = (duration_seconds % 3600) // 60
+            seconds = duration_seconds % 60
+            duration_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours > 0 else f"{minutes:02d}:{seconds:02d}"
+            
+            # Parse last updated date
+            if last_updated:
+                try:
+                    updated_dt = datetime.fromisoformat(last_updated)
+                    days_ago = (datetime.now() - updated_dt).days
+                    if days_ago == 0:
+                        updated_str = "Today"
+                    elif days_ago == 1:
+                        updated_str = "Yesterday"
+                    elif days_ago < 7:
+                        updated_str = f"{days_ago} days ago"
+                    else:
+                        updated_str = updated_dt.strftime("%b %d")
+                except:
+                    updated_str = "Unknown"
+            else:
+                updated_str = "Unknown"
+            
+            videos.append({
+                'file': cache_file,
+                'video_id': cache_file.split('/')[-1].split('_')[0],
+                'title': video_info.get('title', 'Unknown'),
+                'duration': duration_seconds,
+                'duration_str': duration_str,
+                'qa_count': len(qa_history),
+                'summary_count': summary_count,
+                'updated': updated_str,
+                'transcript': data.get('transcript', ''),
+                'video_info': video_info
+            })
+        except Exception as e:
+            console.print(f"[dim]Warning: Could not load {cache_file}: {e}[/dim]")
+            continue
+    
+    if not videos:
+        console.print("[yellow]No valid cached videos found.[/yellow]")
+        return
+    
+    # Sort by last updated (most recent first)
+    videos.sort(key=lambda x: x['updated'], reverse=False)
+    
+    # Create and display table
+    table = Table(title="[bold green]Cached Videos[/bold green]", show_header=True, header_style="bold cyan")
+    table.add_column("#", style="cyan", width=4)
+    table.add_column("Title", style="white", max_width=40)
+    table.add_column("Duration", style="dim", width=10, justify="right")
+    table.add_column("Q&A", style="green", width=6, justify="right")
+    table.add_column("Summaries", style="yellow", width=10, justify="right")
+    table.add_column("Updated", style="dim", width=12)
+    
+    for i, video in enumerate(videos, 1):
+        # Truncate title if too long
+        title = video['title']
+        if len(title) > 40:
+            title = title[:37] + "..."
+        
+        # Color code Q&A count
+        qa_style = "green" if video['qa_count'] > 0 else "dim"
+        qa_text = str(video['qa_count']) if video['qa_count'] > 0 else "0"
+        
+        # Format summary count
+        summary_text = str(video['summary_count']) if video['summary_count'] > 0 else "-"
+        
+        table.add_row(
+            str(i),
+            title,
+            video['duration_str'],
+            f"[{qa_style}]{qa_text}[/{qa_style}]",
+            summary_text,
+            video['updated']
+        )
+    
+    console.print(table)
+    
+    # Show statistics
+    total_qa = sum(v['qa_count'] for v in videos)
+    total_duration = sum(v['duration'] for v in videos)
+    total_hours = total_duration // 3600
+    total_minutes = (total_duration % 3600) // 60
+    
+    console.print(f"\n[dim]Total: {len(videos)} video(s) | {total_qa} Q&A exchanges | {total_hours}h {total_minutes}m total duration[/dim]")
+    
+    # Interactive selection
+    console.print("\n[bold cyan]Select a video for Q&A mode[/bold cyan]")
+    try:
+        choice = IntPrompt.ask(
+            "Enter video number (0 to exit)",
+            choices=[str(i) for i in range(len(videos) + 1)],
+            default=0,
+            show_choices=False
+        )
+        
+        if choice == 0:
+            console.print("[yellow]Exiting...[/yellow]")
+            return
+        
+        # Get selected video
+        selected = videos[choice - 1]
+        console.print(f"\n[green]✓ Loading \"{selected['title']}\"...[/green]")
+        
+        # Start Q&A session with cached data
+        qa_handler = QAHandler(api_key=api_key, provider=provider)
+        qa_handler.interactive_session(
+            transcript=selected['transcript'],
+            video_info=selected['video_info'],
+            video_id=selected['video_id']
+        )
+        
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Selection cancelled.[/yellow]")
+        return
+    except Exception as e:
+        console.print(f"[red]Error: {str(e)}[/red]")
+        return
+
+
 @click.command()
 @click.argument('video_url', required=False)  # Make video_url optional for --show-history
 @click.argument('question', required=False)  # Optional second argument for shorthand
@@ -698,7 +853,8 @@ Transcript:
 @click.option('--display-format', type=click.Choice(['standard', 'enhanced', 'cards']), 
               default='enhanced', help='Display format for summaries')
 @click.option('--show-history', is_flag=True, help='Show all Q&A pairs from history')
-def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask, display_format, show_history):
+@click.option('--browse', is_flag=True, help='Browse cached videos and select one for Q&A')
+def main(video_url, question, api_key, language, detail, output, keep_audio, transcript_only, provider, show_temp_dir, qa, ask, display_format, show_history, browse):
     # Handle --show-history without video URL (list all available histories)
     if show_history and not video_url:
         import glob
@@ -744,9 +900,14 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
         console.print("\n[yellow]Tip: Use the URL with --show-history to view specific Q&A history[/yellow]")
         sys.exit(0)
     
+    # Handle --browse mode
+    if browse:
+        browse_cached_videos(api_key, provider)
+        sys.exit(0)
+    
     # Require video_url for all other operations
     if not video_url:
-        console.print("[red]Error: VIDEO_URL is required (except when using --show-history alone)[/red]")
+        console.print("[red]Error: VIDEO_URL is required (except when using --show-history or --browse alone)[/red]")
         sys.exit(1)
     
     # Detect shorthand syntax: if question is provided without --ask flag, treat it as --ask
@@ -765,6 +926,10 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
     
     if show_history and (qa or transcript_only or ask):
         console.print("[red]Error: Cannot use --show-history with other modes[/red]")
+        sys.exit(1)
+    
+    if browse and (qa or transcript_only or ask or show_history):
+        console.print("[red]Error: Cannot use --browse with other modes[/red]")
         sys.exit(1)
     
     audio_file = None
