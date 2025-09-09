@@ -9,8 +9,8 @@ from pathlib import Path
 
 import click
 import yt_dlp
+import assemblyai as aai
 from openai import OpenAI
-from pydub import AudioSegment
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.panel import Panel
@@ -35,7 +35,6 @@ LLM_TEMPERATURE = float(os.getenv("TRANSCRIPTOR_LLM_TEMPERATURE", "0.3"))
 LLM_MAX_TOKENS = int(os.getenv("TRANSCRIPTOR_LLM_MAX_TOKENS", "3000"))
 
 OPENAI_CHAT_MODEL = os.getenv("TRANSCRIPTOR_OPENAI_CHAT_MODEL", "gpt-4o-mini")
-OPENAI_WHISPER_MODEL = os.getenv("TRANSCRIPTOR_OPENAI_WHISPER_MODEL", "whisper-1")
 ANTHROPIC_MODEL = os.getenv("TRANSCRIPTOR_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
 def sanitize_filename(title: str, max_length: int = 50) -> str:
@@ -163,115 +162,47 @@ class YouTubeAudioExtractor:
                 continue
 
 
-class ChunkedWhisperTranscriber:
-    def __init__(self, api_key: str = None, session_temp_dir: str = None):
-        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+class AssemblyAITranscriber:
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv('ASSEMBLYAI_API_KEY')
         if not self.api_key:
-            raise ValueError("OpenAI API key not found. Set OPENAI_API_KEY or use --api-key")
-        self.client = OpenAI(api_key=self.api_key)
-        self.max_size_mb = 24  # Stay under 25MB limit
-        self.session_temp_dir = session_temp_dir or tempfile.mkdtemp(prefix="yt_transcriber_")
+            raise ValueError("AssemblyAI API key not found. Set ASSEMBLYAI_API_KEY in your environment")
+        aai.settings.api_key = self.api_key
     
-    def split_audio(self, audio_file: str, progress_task=None, progress=None) -> List[str]:
-        """Split audio file into chunks under 24MB"""
-        audio = AudioSegment.from_mp3(audio_file)
-        file_size_mb = os.path.getsize(audio_file) / (1024 * 1024)
-        
-        if file_size_mb <= self.max_size_mb:
-            return [audio_file]
-        
-        # Calculate how many chunks we need
-        num_chunks = int(file_size_mb / self.max_size_mb) + 1
-        chunk_duration_ms = len(audio) // num_chunks
-        
-        chunks = []
-        # Create a subdirectory for chunks in the session temp dir
-        temp_dir = os.path.join(self.session_temp_dir, f"chunks_{os.getpid()}_{id(self)}")
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        if progress:
-            progress.update(progress_task, description=f"Splitting audio into {num_chunks} chunks...")
-        
-        for i in range(num_chunks):
-            start_ms = i * chunk_duration_ms
-            end_ms = min((i + 1) * chunk_duration_ms, len(audio))
-            
-            chunk = audio[start_ms:end_ms]
-            chunk_file = os.path.join(temp_dir, f"chunk_{i+1}.mp3")
-            chunk.export(chunk_file, format="mp3")
-            chunks.append(chunk_file)
-            
-            if progress:
-                progress.update(progress_task, 
-                              description=f"Created chunk {i+1}/{num_chunks} ({(end_ms-start_ms)/1000:.0f}s)")
-        
-        return chunks
-    
-    def transcribe_chunk(self, audio_file: str, language: Optional[str] = None) -> str:
-        """Transcribe a single audio chunk"""
-        try:
-            with open(audio_file, 'rb') as audio:
-                params = {
-                    'model': OPENAI_WHISPER_MODEL,
-                    'file': audio,
-                    'response_format': 'text',
-                }
-                if language:
-                    params['language'] = language
-                
-                transcript = self.client.audio.transcriptions.create(**params)
-                return transcript
-        except Exception as e:
-            raise Exception(f"Transcription failed for chunk: {str(e)}")
-    
-    def transcribe(self, audio_file: str, language: Optional[str] = None, 
+    def transcribe(self, audio_source: str, language: Optional[str] = None, 
                   progress_task=None, progress=None) -> str:
-        """Transcribe audio file, splitting if necessary"""
-        chunks = self.split_audio(audio_file, progress_task, progress)
+        """Transcribe audio using AssemblyAI - supports both local files and URLs without size limits"""
         
-        if len(chunks) == 1:
+        # Configure transcription with optional language hint
+        config_params = {
+            'speech_model': aai.SpeechModel.universal
+        }
+        if language:
+            config_params['language_code'] = language
+        
+        config = aai.TranscriptionConfig(**config_params)
+        
+        # Update progress
+        if progress:
+            progress.update(progress_task, description="Uploading and transcribing with AssemblyAI...")
+        
+        try:
+            # Create transcriber and start transcription
+            transcriber = aai.Transcriber(config=config)
+            transcript = transcriber.transcribe(audio_source)
+            
+            # Poll for completion with progress updates
             if progress:
-                progress.update(progress_task, description="Transcribing audio...")
-            return self.transcribe_chunk(chunks[0], language)
-        
-        # Transcribe multiple chunks
-        transcripts = []
-        for i, chunk in enumerate(chunks, 1):
-            if progress:
-                progress.update(progress_task, 
-                              description=f"Transcribing chunk {i}/{len(chunks)}...")
+                progress.update(progress_task, description="Processing transcription...")
             
-            transcript = self.transcribe_chunk(chunk, language)
-            transcripts.append(transcript)
+            # Check for errors
+            if transcript.status == "error":
+                raise RuntimeError(f"Transcription failed: {transcript.error}")
             
-            # Save chunk transcript to temp folder
-            if self.session_temp_dir and os.path.exists(self.session_temp_dir):
-                chunk_transcript_file = os.path.join(
-                    os.path.dirname(chunk), 
-                    f"chunk_{i}_transcript.txt"
-                )
-                try:
-                    with open(chunk_transcript_file, 'w', encoding='utf-8') as f:
-                        f.write(transcript)
-                except Exception:
-                    pass  # Silent fail for transcript saving
+            return transcript.text
             
-            # No need to clean up individual chunks - they'll be cleaned with session dir
-        
-        # Save merged transcript to temp folder
-        merged_transcript = " ".join(transcripts)
-        if self.session_temp_dir and os.path.exists(self.session_temp_dir):
-            merged_transcript_file = os.path.join(
-                self.session_temp_dir,
-                "merged_transcript.txt"
-            )
-            try:
-                with open(merged_transcript_file, 'w', encoding='utf-8') as f:
-                    f.write(merged_transcript)
-            except Exception:
-                pass  # Silent fail for transcript saving
-        
-        return merged_transcript
+        except Exception as e:
+            raise Exception(f"AssemblyAI transcription failed: {str(e)}")
 
 
 class Summarizer:
@@ -949,7 +880,7 @@ def browse_cached_videos(api_key: str = None, provider: str = 'openai'):
 @click.command()
 @click.argument('video_url', required=False)  # Make video_url optional for --show-history
 @click.argument('question', required=False)  # Optional second argument for shorthand
-@click.option('--api-key', help='OpenAI API key for transcription and summarization')
+@click.option('--api-key', help='API key for LLM provider (OpenAI or Anthropic)')
 @click.option('--language', help='Language code for transcription (e.g., en, es, fr)')
 @click.option('--detail', type=click.Choice(['brief', 'medium', 'detailed']), 
               default='medium', help='Level of detail for summary')
@@ -1137,12 +1068,10 @@ def main(video_url, question, api_key, language, detail, output, keep_audio, tra
                 console.print(f"[green]✓ Downloaded: {video_info['title']}[/green]")
                 console.print(f"[dim]Duration: {video_info['duration']}s | Size: {file_size_mb:.1f}MB | Uploader: {video_info['uploader']}[/dim]")
                 
-                # Transcribe audio (with chunking if needed)
+                # Transcribe audio using AssemblyAI (no size limits!)
                 progress.update(task, description="Initializing transcription...")
-                # Pass the session temp dir if we have an extractor
-                session_temp = extractor.session_temp_dir if extractor else None
-                transcriber = ChunkedWhisperTranscriber(api_key=api_key, 
-                                                       session_temp_dir=session_temp)
+                
+                transcriber = AssemblyAITranscriber()
                 transcript = transcriber.transcribe(audio_file, language=language, 
                                                    progress_task=task, progress=progress)
             
